@@ -150,7 +150,8 @@ in `.env` are honored by the Tailscale launcher too.
 writes the default user-config token; it does not write a custom
 `DRAFTS_MCP_TOKEN_FILE`. It creates the application directory with mode `0700`
 and the token with mode `0600`; rotation also repairs these permissions.
-The LaunchAgent installer requires the default token to exist.
+The LaunchAgent installer validates the selected token using the same
+configuration and permission checks as startup.
 
 Generate the token once in the user config directory, then configure the MCP
 client with its value. Source checkouts and extracted releases share that token.

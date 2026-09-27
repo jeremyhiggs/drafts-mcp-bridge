@@ -59,7 +59,7 @@ describe("standalone release", () => {
         HOME: path.join(tempDir, "home"),
         PATH: `${binDir}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
         TAILSCALE_TEST_LOG: tailscaleLog,
-        XDG_CONFIG_HOME: path.join(tempDir, "config"),
+        XDG_CONFIG_HOME: path.join(tempDir, "config & # <bridge>"),
       };
       await execute(path.join(releaseRoot, "scripts", "generate-token.sh"), [], {
         cwd: tempDir,
@@ -71,7 +71,7 @@ describe("standalone release", () => {
       expect((await stat(path.dirname(tokenPath))).mode & 0o777).toBe(0o700);
       await writeFile(
         path.join(releaseRoot, ".env"),
-        "DRAFTS_MCP_PORT=0\nDRAFTS_MCP_VERBOSE=true\n",
+        `XDG_CONFIG_HOME=${JSON.stringify(env.XDG_CONFIG_HOME)}\nDRAFTS_MCP_PORT=0\nDRAFTS_MCP_VERBOSE=true\n`,
       );
 
       bridgeProcess = spawn(path.join(releaseRoot, "scripts", scriptName), [], {
@@ -111,17 +111,25 @@ describe("standalone release", () => {
           { mode: 0o755 },
         );
         await writeFile(path.join(binDir, "plutil"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-        await execute(path.join(releaseRoot, "scripts", "install-launch-agent.sh"), [], { env });
+        const installEnv: NodeJS.ProcessEnv = { ...env };
+        delete installEnv.XDG_CONFIG_HOME;
+        await execute(path.join(releaseRoot, "scripts", "install-launch-agent.sh"), [], {
+          env: installEnv,
+        });
         const plist = await readFile(
           path.join(env.HOME, "Library", "LaunchAgents", "local.drafts-mcp-bridge.plist"),
           "utf8",
         );
-        expect(plist).toContain(`<string>${env.XDG_CONFIG_HOME}</string>`);
+        expect(plist).toContain(
+          `<string>${env.XDG_CONFIG_HOME.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</string>`,
+        );
         expect(plist).not.toContain(token);
         await chmod(tokenPath, 0o644);
         await expect(
-          execute(path.join(releaseRoot, "scripts", "install-launch-agent.sh"), [], { env }),
-        ).rejects.toThrow(/must be private/);
+          execute(path.join(releaseRoot, "scripts", "install-launch-agent.sh"), [], {
+            env: installEnv,
+          }),
+        ).rejects.toThrow(/must not be group\/world readable/);
       }
     },
     30_000,

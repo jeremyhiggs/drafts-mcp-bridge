@@ -4,11 +4,7 @@ set -eu
 LABEL="local.drafts-mcp-bridge"
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
-case "$CONFIG_HOME" in
-  /*) ;;
-  *) echo "XDG_CONFIG_HOME must be an absolute path." >&2; exit 1 ;;
-esac
+cd "$ROOT_DIR"
 TEMPLATE="$ROOT_DIR/launchd/$LABEL.plist.template"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 SERVICE_DIR="$HOME/Library/Application Support/drafts-mcp-bridge"
@@ -36,7 +32,8 @@ xml_escape() {
       -e 's/</\&lt;/g' \
       -e 's/>/\&gt;/g' \
       -e 's/"/\&quot;/g' \
-      -e "s/'/\&apos;/g"
+      -e "s/'/\&apos;/g" \
+    | sed 's/[\\&#]/\\&/g'
 }
 
 render_template() {
@@ -95,19 +92,19 @@ TAILSCALE_PATH="$(command -v tailscale)"
 LAUNCHER_PATH="$SERVICE_DIR/drafts-mcp-bridge.sh"
 SERVICE_PATH="$(dirname "$NODE_PATH"):$(dirname "$TAILSCALE_PATH"):$PATH"
 
-if [ ! -f "$CONFIG_HOME/drafts-mcp-bridge/token" ]; then
-  echo "Missing default token file. Run: scripts/generate-token.sh" >&2
-  exit 1
+CONFIG_MODULE="$ROOT_DIR/dist/config.mjs"
+if [ ! -f "$ROOT_DIR/dist/tailscale-start.mjs" ]; then
+  pnpm --dir "$ROOT_DIR" run build
+  CONFIG_MODULE="$ROOT_DIR/dist/config.js"
 fi
-node -e '
-  const fs = require("node:fs");
-  for (const [file, directory] of [[process.argv[1], true], [process.argv[1] + "/token", false]]) {
-    const stat = fs.lstatSync(file);
-    if ((directory ? !stat.isDirectory() : !stat.isFile()) || (stat.mode & 0o077) !== 0) {
-      throw new Error("Token directory/file must be private (0700/0600) and not symbolic links.");
-    }
-  }
-' "$CONFIG_HOME/drafts-mcp-bridge"
+CONFIG_HOME="$(node --input-type=module - "$CONFIG_MODULE" <<'NODE'
+import { dirname } from "node:path";
+import { pathToFileURL } from "node:url";
+const { defaultTokenFile, loadConfig, loadEffectiveEnv } = await import(pathToFileURL(process.argv[2]).href);
+loadConfig();
+console.log(dirname(dirname(defaultTokenFile(loadEffectiveEnv()))));
+NODE
+)"
 
 mkdir -p "$HOME/Library/LaunchAgents" "$SERVICE_DIR" "$LOG_DIR"
 cp "$SOURCE_LAUNCHER_PATH" "$LAUNCHER_PATH"
