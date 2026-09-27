@@ -25,19 +25,19 @@
   },
   "dependencies": {
     "@agiletortoise/drafts-mcp-server": "1.0.12",
-    "@modelcontextprotocol/sdk": "1.29.0",
-    "dotenv": "17.4.2"
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "dotenv": "18.0.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.0",
-    "@types/node": "24.0.7",
-    "esbuild": "0.25.12",
-    "tsx": "4.20.3",
-    "typescript": "5.8.3",
-    "vitest": "3.2.6"
+    "@biomejs/biome": "2.5.14",
+    "@types/node": "24.13.6",
+    "esbuild": "0.28.2",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.0.1"
   },
   "engines": {
     "node": ">=24.0.0"
   },
-  "packageManager": "pnpm@11.13.0"
+  "packageManager": "pnpm@11.28.0"
 }

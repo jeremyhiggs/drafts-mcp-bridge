@@ -268,6 +268,11 @@ token was missing or invalid.
 
 ## Development
 
+The project pins pnpm 11.28.0. CI checks formatting, lint, types, tests, and builds.
+Dependency audits cover runtime and development dependencies on pull requests,
+pushes to `main`, and daily at 00:00 UTC. Moderate or higher severity advisories
+fail the audit job. Run the same scan locally with `pnpm audit --audit-level moderate`.
+
 ```sh
 pnpm install
 pnpm run format:check

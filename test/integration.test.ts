@@ -27,78 +27,85 @@ describe("standalone release", () => {
     await execute("pnpm", ["build:release"], { cwd: repoRoot });
   }, 30_000);
 
-  test.each([
-    "run-server.sh",
-    "run-tailscale.sh",
-  ])("%s runs with bundled upstream and no node_modules or pnpm", async (scriptName) => {
-    const tempDir = await mkdtemp(path.join(tmpdir(), "drafts release "));
-    await execute("tar", [
-      "-xzf",
-      path.join(repoRoot, "release", "drafts-mcp-bridge.tar.gz"),
-      "-C",
-      tempDir,
-    ]);
-    const releaseRoot = path.join(tempDir, "drafts-mcp-bridge");
-    await expect(access(path.join(releaseRoot, "node_modules"))).rejects.toThrow();
-
-    const binDir = path.join(tempDir, "bin");
-    await mkdir(binDir);
-    await writeFile(path.join(binDir, "pnpm"), "#!/bin/sh\nexit 99\n", { mode: 0o755 });
-    await writeFile(
-      path.join(binDir, "osascript"),
-      '#!/bin/sh\ncat > /dev/null\nprintf "Release workspace\\n"\n',
-      { mode: 0o755 },
-    );
-    const tailscaleLog = path.join(tempDir, "tailscale.log");
-    await writeFile(
-      path.join(binDir, "tailscale"),
-      '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TAILSCALE_TEST_LOG"\nif [ "$*" = "serve status --json" ]; then printf "{}\\n"; fi\n',
-      { mode: 0o755 },
-    );
-    const env = {
-      ...withoutDraftsEnv(process.env),
-      PATH: `${binDir}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
-      TAILSCALE_TEST_LOG: tailscaleLog,
-    };
-    await execute(path.join(releaseRoot, "scripts", "generate-token.sh"), [], {
-      cwd: tempDir,
-      env,
-    });
-    const tokenPath = path.join(releaseRoot, ".secrets", "drafts-mcp-token");
-    const token = (await readFile(tokenPath, "utf8")).trim();
-    expect((await stat(tokenPath)).mode & 0o077).toBe(0);
-    await writeFile(path.join(releaseRoot, ".env"), "DRAFTS_MCP_PORT=0\nDRAFTS_MCP_VERBOSE=true\n");
-
-    bridgeProcess = spawn(path.join(releaseRoot, "scripts", scriptName), [], { cwd: tempDir, env });
-    const bridgeUrl = await waitForBridgeUrl(bridgeProcess);
-    expect((await fetch(bridgeUrl)).status).toBe(401);
-    const client = new Client({ name: "standalone-test-client", version: "0.0.0" });
-    try {
-      await client.connect(
-        new StreamableHTTPClientTransport(bridgeUrl, {
-          requestInit: { headers: { authorization: `Bearer ${token}` } },
-        }),
-      );
-      const tools = await client.listTools();
-      expect(tools.tools.map((tool) => tool.name)).toContain("drafts_get_current");
-      expect(tools.tools.map((tool) => tool.name)).not.toContain("drafts_create_draft");
-      const result = await client.callTool({ name: "drafts_list_workspaces", arguments: {} });
-      expect(result.isError).not.toBe(true);
-      expect(result.content).toEqual([
-        { type: "text", text: JSON.stringify([{ name: "Release workspace" }], null, 2) },
+  test.each(["run-server.sh", "run-tailscale.sh"])(
+    "%s runs with bundled upstream and no node_modules or pnpm",
+    async (scriptName) => {
+      const tempDir = await mkdtemp(path.join(tmpdir(), "drafts release "));
+      await execute("tar", [
+        "-xzf",
+        path.join(repoRoot, "release", "drafts-mcp-bridge.tar.gz"),
+        "-C",
+        tempDir,
       ]);
-    } finally {
-      await client.close();
-    }
-    await stopProcess(bridgeProcess);
-    expect(bridgeProcess.exitCode).toBe(0);
-    bridgeProcess = undefined;
-    if (scriptName === "run-tailscale.sh") {
-      expect(await readFile(tailscaleLog, "utf8")).toContain(
-        `serve --bg --set-path /drafts-mcp ${bridgeUrl.href}`,
+      const releaseRoot = path.join(tempDir, "drafts-mcp-bridge");
+      await expect(access(path.join(releaseRoot, "node_modules"))).rejects.toThrow();
+
+      const binDir = path.join(tempDir, "bin");
+      await mkdir(binDir);
+      await writeFile(path.join(binDir, "pnpm"), "#!/bin/sh\nexit 99\n", { mode: 0o755 });
+      await writeFile(
+        path.join(binDir, "osascript"),
+        '#!/bin/sh\ncat > /dev/null\nprintf "Release workspace\\n"\n',
+        { mode: 0o755 },
       );
-    }
-  }, 30_000);
+      const tailscaleLog = path.join(tempDir, "tailscale.log");
+      await writeFile(
+        path.join(binDir, "tailscale"),
+        '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TAILSCALE_TEST_LOG"\nif [ "$*" = "serve status --json" ]; then printf "{}\\n"; fi\n',
+        { mode: 0o755 },
+      );
+      const env = {
+        ...withoutDraftsEnv(process.env),
+        PATH: `${binDir}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
+        TAILSCALE_TEST_LOG: tailscaleLog,
+      };
+      await execute(path.join(releaseRoot, "scripts", "generate-token.sh"), [], {
+        cwd: tempDir,
+        env,
+      });
+      const tokenPath = path.join(releaseRoot, ".secrets", "drafts-mcp-token");
+      const token = (await readFile(tokenPath, "utf8")).trim();
+      expect((await stat(tokenPath)).mode & 0o077).toBe(0);
+      await writeFile(
+        path.join(releaseRoot, ".env"),
+        "DRAFTS_MCP_PORT=0\nDRAFTS_MCP_VERBOSE=true\n",
+      );
+
+      bridgeProcess = spawn(path.join(releaseRoot, "scripts", scriptName), [], {
+        cwd: tempDir,
+        env,
+      });
+      const bridgeUrl = await waitForBridgeUrl(bridgeProcess);
+      expect((await fetch(bridgeUrl)).status).toBe(401);
+      const client = new Client({ name: "standalone-test-client", version: "0.0.0" });
+      try {
+        await client.connect(
+          new StreamableHTTPClientTransport(bridgeUrl, {
+            requestInit: { headers: { authorization: `Bearer ${token}` } },
+          }),
+        );
+        const tools = await client.listTools();
+        expect(tools.tools.map((tool) => tool.name)).toContain("drafts_get_current");
+        expect(tools.tools.map((tool) => tool.name)).not.toContain("drafts_create_draft");
+        const result = await client.callTool({ name: "drafts_list_workspaces", arguments: {} });
+        expect(result.isError).not.toBe(true);
+        expect(result.content).toEqual([
+          { type: "text", text: JSON.stringify([{ name: "Release workspace" }], null, 2) },
+        ]);
+      } finally {
+        await client.close();
+      }
+      await stopProcess(bridgeProcess);
+      expect(bridgeProcess.exitCode).toBe(0);
+      bridgeProcess = undefined;
+      if (scriptName === "run-tailscale.sh") {
+        expect(await readFile(tailscaleLog, "utf8")).toContain(
+          `serve --bg --set-path /drafts-mcp ${bridgeUrl.href}`,
+        );
+      }
+    },
+    30_000,
+  );
 });
 
 describe("packaged bridge integration", () => {
