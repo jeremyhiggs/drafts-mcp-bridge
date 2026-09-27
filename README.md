@@ -152,12 +152,9 @@ writes the default user-config token; it does not write a custom
 and the token with mode `0600`; rotation also repairs these permissions.
 The LaunchAgent installer requires the default token to exist.
 
-Existing `.secrets/drafts-mcp-token` files are no longer selected automatically.
-To keep an existing token, move it to the new default location and apply `0700`
-to the application directory and `0600` to the token, or set
-`DRAFTS_MCP_TOKEN_FILE` to its absolute path. Otherwise generate a new token and
-update the MCP client. The archive contains no token; an existing user-config
-token is shared with an extracted release without being copied into the archive.
+Generate the token once in the user config directory, then configure the MCP
+client with its value. Source checkouts and extracted releases share that token.
+The archive contains no token.
 
 | Variable | Default | Description |
 | --- | --- | --- |
