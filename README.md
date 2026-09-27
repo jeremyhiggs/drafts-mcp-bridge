@@ -117,6 +117,48 @@ compile before starting; release scripts execute the bundled `.mjs` files.
 `.env` is optional. If present, it is loaded before process environment values,
 so shell, launchd, or service-manager env vars override `.env`.
 
+### Where the MCP token comes from
+
+This is a locally generated bearer token for authenticating clients to the bridge.
+Drafts and Tailscale do not supply it. Configure your MCP client to send the same
+value in its `Authorization: Bearer ...` header.
+
+After loading configuration, the bridge selects the first applicable source:
+
+1. A non-empty `DRAFTS_MCP_TOKEN` from the effective environment.
+2. The file named by `DRAFTS_MCP_TOKEN_FILE`.
+3. `.secrets/drafts-mcp-token` under the process working directory.
+
+Both variables can come from the process environment or `.env`; process values
+override the same variable in `.env`. Relative `DRAFTS_MCP_TOKEN_FILE` paths are
+resolved beside the loaded `.env` file, or against the working directory when
+there is no `.env`. Absolute paths are used unchanged. An explicitly selected
+file that is missing, empty, or has unsafe permissions causes startup to fail;
+it does not fall back to another token.
+
+The supplied scripts establish these locations:
+
+| Startup method | Default token location |
+| --- | --- |
+| Source checkout (`pnpm start`) | `<checkout>/.secrets/drafts-mcp-token` |
+| Extracted release (`./scripts/run-server.sh`) | `<extracted-directory>/.secrets/drafts-mcp-token` |
+| Tailscale launcher or LaunchAgent | `<bridge-root>/.secrets/drafts-mcp-token`, selected by the launcher |
+| Direct `node` invocation | `<working-directory>/.secrets/drafts-mcp-token` |
+
+The Tailscale/LaunchAgent launcher exports the default file's absolute path when
+that file exists and neither token variable is already set in its process
+environment. That exported path overrides a `DRAFTS_MCP_TOKEN_FILE` entry in
+`.env`. To select a different file in this case, set the variable in the
+launcher's process environment. A non-empty `DRAFTS_MCP_TOKEN` still takes
+precedence over the selected file.
+
+`pnpm token:generate` (source) or `./scripts/generate-token.sh` (release) always
+writes the default file under the bridge root; it does not write a custom
+`DRAFTS_MCP_TOKEN_FILE`. The LaunchAgent installer currently requires that
+default file to exist. The release archive contains no token, and the source
+checkout's token is not copied into it. Generate a token after extracting the
+release, or configure an existing private token file explicitly.
+
 | Variable | Default | Description |
 | --- | --- | --- |
 | `DRAFTS_MCP_TOKEN_FILE` | `.secrets/drafts-mcp-token` when present | Private file containing the bearer token. |
