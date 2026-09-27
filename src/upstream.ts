@@ -1,5 +1,7 @@
 import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
@@ -24,6 +26,12 @@ export type UpstreamConnection = {
 };
 
 export function resolveDefaultUpstream(): ResolvedUpstream {
+  const bundledBin = new URL("./upstream.mjs", import.meta.url);
+  if (existsSync(bundledBin)) {
+    const binPath = fileURLToPath(bundledBin);
+    return { command: process.execPath, args: [binPath], binPath };
+  }
+
   const packageJsonPath = require.resolve("@agiletortoise/drafts-mcp-server/package.json");
   const packageJson = require(packageJsonPath) as PackageJson;
   const packageDir = path.dirname(packageJsonPath);

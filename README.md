@@ -26,7 +26,7 @@ What it does not do:
 
 - macOS with Drafts installed and automation access allowed
 - Node.js 24+
-- pnpm 11+
+- pnpm 11+, only for building or running from source
 - Tailscale, only if using `pnpm start:tailscale`
 
 ## Quick Start
@@ -68,6 +68,38 @@ permissions and does not print the token. Rotate it with:
 pnpm token:generate -- --force
 ```
 
+## Standalone Release
+
+Build a portable archive from this checkout:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build:release
+```
+
+This produces `release/drafts-mcp-bridge.tar.gz`. It bundles the bridge,
+the pinned upstream server, and their JavaScript dependencies. Copy and extract
+the archive on your Mac; no `node_modules`, pnpm, or build step is needed there.
+Node.js 24+ and Drafts are still required, plus Tailscale when using Serve.
+
+```sh
+tar -xzf drafts-mcp-bridge.tar.gz
+cd drafts-mcp-bridge
+./scripts/generate-token.sh
+./scripts/run-server.sh
+# Or, for tailnet HTTPS:
+./scripts/run-tailscale.sh
+```
+
+Configuration and token files live in the extracted directory. The archive
+contains no `.env` or tokens. You can install the release as a LaunchAgent with
+`./scripts/install-launch-agent.sh`; keep its directory in place afterward.
+Rotate a release token with `./scripts/generate-token.sh --force`.
+Bundled dependency licenses are included in `THIRD_PARTY_NOTICES.txt`.
+
+Rebuild the release after changing source code. Source checkout commands still
+compile before starting; release scripts execute the bundled `.mjs` files.
+
 ## Security
 
 - Bearer auth is required on every request.
@@ -95,7 +127,7 @@ so shell, launchd, or service-manager env vars override `.env`.
 | `DRAFTS_MCP_READ_ONLY` | `true` | Set to `false` to expose mutating upstream tools. |
 | `DRAFTS_MCP_VERBOSE` | `false` | Set to `true` for redacted request logs. |
 | `DRAFTS_MCP_UPSTREAM_COMMAND` | Node executable | Optional override for the stdio upstream command. |
-| `DRAFTS_MCP_UPSTREAM_ARGS` | resolved dependency bin path | Optional override args. Supports JSON arrays or shell-like quoted strings. |
+| `DRAFTS_MCP_UPSTREAM_ARGS` | resolved upstream bin path | Optional override args. Must be a JSON array of strings, such as `["--flag", "value"]`. Shell-like strings are no longer accepted. |
 
 To bind plain HTTP to one trusted interface, set `DRAFTS_MCP_HOST` to that
 interface's IP address, such as a Tailscale or LAN address. Setting it to
@@ -167,7 +199,8 @@ pnpm launchd:uninstall
 
 ## Upstream Launch
 
-The upstream package is pinned in `package.json`. At runtime, the bridge:
+The upstream package is pinned in `package.json`. Release builds launch the
+bundled `dist/upstream.mjs`; source builds:
 
 1. resolves `@agiletortoise/drafts-mcp-server/package.json`
 2. reads the package `bin` entry
@@ -244,8 +277,11 @@ pnpm test
 pnpm run build
 ```
 
-Tests use a fake stdio MCP child process. They do not launch Drafts or call
-the real upstream package.
+Most tests use a fake stdio MCP child process. Release tests extract the archive
+outside the repository and start the bundled upstream server with pnpm disabled
+and no `node_modules`. They list tools, call a read-only tool, and check
+authentication with AppleScript and Tailscale commands simulated; they do not
+access your Drafts data.
 
 `pnpm start`, `pnpm start:tailscale`, and `pnpm token:generate` run
 `pnpm run build` before executing compiled output.

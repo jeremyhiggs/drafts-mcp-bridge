@@ -16,6 +16,9 @@ if [ -z "${DRAFTS_MCP_TOKEN:-}" ] \
   export DRAFTS_MCP_TOKEN_FILE="$ROOT_DIR/.secrets/drafts-mcp-token"
 fi
 
-pnpm --dir "$ROOT_DIR" run build
+if [ -f "$ROOT_DIR/dist/tailscale-start.mjs" ]; then
+  exec node "$ROOT_DIR/dist/tailscale-start.mjs" "$@"
+fi
 
+pnpm --dir "$ROOT_DIR" run build
 exec node "$ROOT_DIR/dist/tailscale-start.js" "$@"

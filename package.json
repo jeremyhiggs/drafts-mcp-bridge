@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "build:release": "node scripts/build-release.mjs",
     "dev": "tsx src/index.ts",
     "format": "biome format --write .",
     "format:check": "biome format .",
@@ -23,13 +24,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@agiletortoise/drafts-mcp-server": "1.0.12",
     "@modelcontextprotocol/sdk": "1.29.0",
-    "dotenv": "17.4.2",
-    "@agiletortoise/drafts-mcp-server": "1.0.12"
+    "dotenv": "17.4.2"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.0",
     "@types/node": "24.0.7",
+    "esbuild": "0.25.12",
     "tsx": "4.20.3",
     "typescript": "5.8.3",
     "vitest": "3.2.6"

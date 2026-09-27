@@ -7,6 +7,7 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  realpathSync,
   renameSync,
   unlinkSync,
   writeFileSync,
@@ -40,9 +41,7 @@ export function generateToken(options: GenerateTokenOptions = {}): GenerateToken
   }
 
   if (exists && !options.force) {
-    throw new Error(
-      `${DEFAULT_TOKEN_FILE} already exists. Use pnpm token:generate -- --force to rotate it.`,
-    );
+    throw new Error(`${DEFAULT_TOKEN_FILE} already exists. Use --force to rotate it.`);
   }
 
   mkdirSync(tokenDir, {
@@ -88,7 +87,7 @@ export function parseArgs(args: string[]): GenerateTokenOptions {
     };
   }
 
-  throw new Error("Usage: pnpm token:generate [-- --force]");
+  throw new Error("Usage: scripts/generate-token.sh [--force]");
 }
 
 export function run(args: string[] = process.argv.slice(2)): void {
@@ -98,7 +97,7 @@ export function run(args: string[] = process.argv.slice(2)): void {
   console.error("Keep this file private; the token value was not printed.");
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   try {
     run();
   } catch (error: unknown) {

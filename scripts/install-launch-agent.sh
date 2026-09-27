@@ -11,7 +11,6 @@ LOG_DIR="$HOME/Library/Logs/drafts-mcp-bridge"
 STDOUT_LOG="$LOG_DIR/out.log"
 STDERR_LOG="$LOG_DIR/err.log"
 GUI_DOMAIN="gui/$(id -u)"
-PNPM_PATH=""
 NODE_PATH=""
 TAILSCALE_PATH=""
 SOURCE_LAUNCHER_PATH="$ROOT_DIR/scripts/drafts-mcp-bridge.sh"
@@ -71,7 +70,9 @@ bootstrap_launch_agent() {
   done
 }
 
-require_command pnpm
+if [ ! -f "$ROOT_DIR/dist/tailscale-start.mjs" ]; then
+  require_command pnpm
+fi
 require_command node
 require_command tailscale
 require_command launchctl
@@ -83,11 +84,10 @@ if [ "$NODE_MAJOR" -lt 24 ]; then
   exit 1
 fi
 
-PNPM_PATH="$(command -v pnpm)"
 NODE_PATH="$(command -v node)"
 TAILSCALE_PATH="$(command -v tailscale)"
 LAUNCHER_PATH="$SERVICE_DIR/drafts-mcp-bridge.sh"
-SERVICE_PATH="$(dirname "$PNPM_PATH"):$(dirname "$NODE_PATH"):$(dirname "$TAILSCALE_PATH"):$PATH"
+SERVICE_PATH="$(dirname "$NODE_PATH"):$(dirname "$TAILSCALE_PATH"):$PATH"
 
 if [ ! -f "$ROOT_DIR/.secrets/drafts-mcp-token" ]; then
   echo "Missing default token file. Run: pnpm token:generate" >&2

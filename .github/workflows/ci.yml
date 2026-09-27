@@ -11,9 +11,23 @@ permissions:
   contents: read
 
 jobs:
-  build-lint-test:
-    name: Build, lint, and test
+  check:
+    name: ${{ matrix.name }}
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Formatting
+            script: format:check
+          - name: Lint
+            script: lint
+          - name: Typecheck
+            script: typecheck
+          - name: Test
+            script: test
+          - name: Build
+            script: build
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -34,17 +48,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Check formatting
-        run: pnpm run format:check
+      - name: ${{ matrix.name }}
+        run: pnpm run ${{ matrix.script }}
 
-      - name: Lint
-        run: pnpm run lint
-
-      - name: Typecheck
-        run: pnpm run typecheck
-
-      - name: Test
-        run: pnpm test
-
-      - name: Build
-        run: pnpm run build
+      - name: Build standalone release
+        if: matrix.script == 'build'
+        run: pnpm run build:release

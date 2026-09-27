@@ -171,16 +171,15 @@ export function parseArgsEnv(value: string | undefined): string[] {
     return [];
   }
 
-  const trimmed = value.trim();
-  if (trimmed.startsWith("[")) {
-    const parsed = JSON.parse(trimmed) as unknown;
+  try {
+    const parsed: unknown = JSON.parse(value);
     if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === "string")) {
-      throw new Error("DRAFTS_MCP_UPSTREAM_ARGS JSON must be an array of strings.");
+      throw new Error("Invalid argument array");
     }
     return parsed;
+  } catch {
+    throw new Error("DRAFTS_MCP_UPSTREAM_ARGS must be a JSON array of strings.");
   }
-
-  return splitShellLike(trimmed);
 }
 
 function parsePort(value: string | undefined): number {
@@ -194,62 +193,4 @@ function parsePort(value: string | undefined): number {
   }
 
   return port;
-}
-
-function splitShellLike(input: string): string[] {
-  const args: string[] = [];
-  let current = "";
-  let quote: "'" | '"' | undefined;
-  let escaping = false;
-
-  for (const char of input) {
-    if (escaping) {
-      current += char;
-      escaping = false;
-      continue;
-    }
-
-    if (char === "\\") {
-      escaping = true;
-      continue;
-    }
-
-    if (quote !== undefined) {
-      if (char === quote) {
-        quote = undefined;
-      } else {
-        current += char;
-      }
-      continue;
-    }
-
-    if (char === "'" || char === '"') {
-      quote = char;
-      continue;
-    }
-
-    if (/\s/.test(char)) {
-      if (current.length > 0) {
-        args.push(current);
-        current = "";
-      }
-      continue;
-    }
-
-    current += char;
-  }
-
-  if (escaping) {
-    current += "\\";
-  }
-
-  if (quote !== undefined) {
-    throw new Error("DRAFTS_MCP_UPSTREAM_ARGS contains an unterminated quote.");
-  }
-
-  if (current.length > 0) {
-    args.push(current);
-  }
-
-  return args;
 }
