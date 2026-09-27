@@ -1,6 +1,6 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
-import { access, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -56,16 +56,19 @@ describe("standalone release", () => {
       );
       const env = {
         ...withoutDraftsEnv(process.env),
+        HOME: path.join(tempDir, "home"),
         PATH: `${binDir}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
         TAILSCALE_TEST_LOG: tailscaleLog,
+        XDG_CONFIG_HOME: path.join(tempDir, "config"),
       };
       await execute(path.join(releaseRoot, "scripts", "generate-token.sh"), [], {
         cwd: tempDir,
         env,
       });
-      const tokenPath = path.join(releaseRoot, ".secrets", "drafts-mcp-token");
+      const tokenPath = path.join(env.XDG_CONFIG_HOME, "drafts-mcp-bridge", "token");
       const token = (await readFile(tokenPath, "utf8")).trim();
-      expect((await stat(tokenPath)).mode & 0o077).toBe(0);
+      expect((await stat(tokenPath)).mode & 0o777).toBe(0o600);
+      expect((await stat(path.dirname(tokenPath))).mode & 0o777).toBe(0o700);
       await writeFile(
         path.join(releaseRoot, ".env"),
         "DRAFTS_MCP_PORT=0\nDRAFTS_MCP_VERBOSE=true\n",
@@ -102,6 +105,23 @@ describe("standalone release", () => {
         expect(await readFile(tailscaleLog, "utf8")).toContain(
           `serve --bg --set-path /drafts-mcp ${bridgeUrl.href}`,
         );
+        await writeFile(
+          path.join(binDir, "launchctl"),
+          '#!/bin/sh\nif [ "$1" = "print" ]; then exit 1; fi\n',
+          { mode: 0o755 },
+        );
+        await writeFile(path.join(binDir, "plutil"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+        await execute(path.join(releaseRoot, "scripts", "install-launch-agent.sh"), [], { env });
+        const plist = await readFile(
+          path.join(env.HOME, "Library", "LaunchAgents", "local.drafts-mcp-bridge.plist"),
+          "utf8",
+        );
+        expect(plist).toContain(`<string>${env.XDG_CONFIG_HOME}</string>`);
+        expect(plist).not.toContain(token);
+        await chmod(tokenPath, 0o644);
+        await expect(
+          execute(path.join(releaseRoot, "scripts", "install-launch-agent.sh"), [], { env }),
+        ).rejects.toThrow(/must be private/);
       }
     },
     30_000,

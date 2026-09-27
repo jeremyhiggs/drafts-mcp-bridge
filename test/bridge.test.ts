@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { DEFAULT_TOKEN_FILE, loadConfig } from "../src/config.js";
+import { defaultTokenFile, loadConfig } from "../src/config.js";
 import { formatAddressForUrl, startBridge, type BridgeRuntime } from "../src/server.js";
 import { connectUpstream, type UpstreamConnection } from "../src/upstream.js";
 
@@ -34,10 +34,11 @@ describe("config", () => {
       loadConfig(
         {
           DRAFTS_MCP_TOKEN: "",
+          XDG_CONFIG_HOME: tempDir,
         },
         { cwd: tempDir },
       ),
-    ).toThrow(/DRAFTS_MCP_TOKEN, DRAFTS_MCP_TOKEN_FILE, or \.secrets/);
+    ).toThrow(/A bearer token is required/);
   });
 
   test("defaults remote access to read-only mode", async () => {
@@ -75,11 +76,11 @@ describe("config", () => {
 
   test("loads bearer token from the default private token file without .env", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "drafts-bridge-"));
-    const tokenPath = path.join(tempDir, DEFAULT_TOKEN_FILE);
-    await mkdir(path.dirname(tokenPath));
+    const tokenPath = defaultTokenFile({ XDG_CONFIG_HOME: tempDir });
+    await mkdir(path.dirname(tokenPath), { mode: 0o700 });
     await writeFile(tokenPath, "default-file-token\n", { mode: 0o600 });
 
-    const config = loadConfig({}, { cwd: tempDir });
+    const config = loadConfig({ XDG_CONFIG_HOME: tempDir }, { cwd: tmpdir() });
 
     expect(config.token).toBe("default-file-token");
     expect(config.host).toBe("127.0.0.1");
@@ -179,6 +180,15 @@ describe("config", () => {
         DRAFTS_MCP_TOKEN_FILE: tokenPath,
       }),
     ).toThrow(/must not be group\/world readable/);
+  });
+
+  test("rejects a default token directory accessible to other users", async () => {
+    const configHome = await mkdtemp(path.join(tmpdir(), "drafts-config-"));
+    const tokenPath = defaultTokenFile({ XDG_CONFIG_HOME: configHome });
+    await mkdir(path.dirname(tokenPath));
+    await chmod(path.dirname(tokenPath), 0o755);
+    await writeFile(tokenPath, "private-token\n", { mode: 0o600 });
+    expect(() => loadConfig({ XDG_CONFIG_HOME: configHome })).toThrow(/private directory/);
   });
 });
 

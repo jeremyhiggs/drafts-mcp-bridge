@@ -1,9 +1,16 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import { parse as parseDotenv } from "dotenv";
 import { resolveDefaultUpstream } from "./upstream.js";
 
-export const DEFAULT_TOKEN_FILE = ".secrets/drafts-mcp-token";
+export function defaultTokenFile(env: NodeJS.ProcessEnv = process.env): string {
+  const configHome = env.XDG_CONFIG_HOME?.trim() || path.join(env.HOME || homedir(), ".config");
+  if (!path.isAbsolute(configHome)) {
+    throw new Error("XDG_CONFIG_HOME must be an absolute path.");
+  }
+  return path.join(configHome, "drafts-mcp-bridge", "token");
+}
 
 export type BridgeConfig = {
   token: string;
@@ -33,10 +40,10 @@ export function loadConfig(
   const cwd = options.cwd ?? process.cwd();
   const sources = loadEnvSources(env, cwd);
   const effectiveEnv = sources.env;
-  const token = resolveToken(effectiveEnv, sources.tokenFileBaseDir, cwd);
+  const token = resolveToken(effectiveEnv, sources.tokenFileBaseDir);
   if (!token) {
     throw new Error(
-      `DRAFTS_MCP_TOKEN, DRAFTS_MCP_TOKEN_FILE, or ${DEFAULT_TOKEN_FILE} is required; refusing to start without bearer auth.`,
+      "A bearer token is required. Run scripts/generate-token.sh or set DRAFTS_MCP_TOKEN / DRAFTS_MCP_TOKEN_FILE.",
     );
   }
 
@@ -93,11 +100,7 @@ function loadEnvFile(filePath: string, required: boolean): Record<string, string
   return parseDotenv(readFileSync(filePath));
 }
 
-function resolveToken(
-  env: NodeJS.ProcessEnv,
-  tokenFileBaseDir: string,
-  cwd: string,
-): string | undefined {
+function resolveToken(env: NodeJS.ProcessEnv, tokenFileBaseDir: string): string | undefined {
   const directToken = env.DRAFTS_MCP_TOKEN?.trim();
   if (directToken) {
     return directToken;
@@ -105,11 +108,15 @@ function resolveToken(
 
   const tokenFile = env.DRAFTS_MCP_TOKEN_FILE?.trim();
   if (!tokenFile) {
-    const defaultTokenFilePath = path.resolve(cwd, DEFAULT_TOKEN_FILE);
+    const defaultTokenFilePath = defaultTokenFile(env);
     if (!existsSync(defaultTokenFilePath)) {
       return undefined;
     }
 
+    const directory = lstatSync(path.dirname(defaultTokenFilePath));
+    if (!directory.isDirectory() || (directory.mode & 0o077) !== 0) {
+      throw new Error("The default token directory must be a private directory (0700).");
+    }
     return readTokenFile(defaultTokenFilePath);
   }
 
@@ -126,7 +133,7 @@ function readTokenFile(tokenFilePath: string): string | undefined {
 }
 
 function assertPrivateFile(filePath: string): void {
-  const stat = statSync(filePath);
+  const stat = lstatSync(filePath);
 
   if (!stat.isFile()) {
     throw new Error(`DRAFTS_MCP_TOKEN_FILE must point to a regular file: ${filePath}`);

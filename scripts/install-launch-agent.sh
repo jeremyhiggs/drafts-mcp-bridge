@@ -4,6 +4,11 @@ set -eu
 LABEL="local.drafts-mcp-bridge"
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+case "$CONFIG_HOME" in
+  /*) ;;
+  *) echo "XDG_CONFIG_HOME must be an absolute path." >&2; exit 1 ;;
+esac
 TEMPLATE="$ROOT_DIR/launchd/$LABEL.plist.template"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 SERVICE_DIR="$HOME/Library/Application Support/drafts-mcp-bridge"
@@ -41,6 +46,7 @@ render_template() {
     -e "s#__WORKING_DIRECTORY__#$(xml_escape "$SERVICE_DIR")#g" \
     -e "s#__LAUNCHER__#$(xml_escape "$LAUNCHER_PATH")#g" \
     -e "s#__PATH__#$(xml_escape "$SERVICE_PATH")#g" \
+    -e "s#__CONFIG_HOME__#$(xml_escape "$CONFIG_HOME")#g" \
     -e "s#__STDOUT_LOG__#$(xml_escape "$STDOUT_LOG")#g" \
     -e "s#__STDERR_LOG__#$(xml_escape "$STDERR_LOG")#g" \
     "$TEMPLATE"
@@ -89,10 +95,19 @@ TAILSCALE_PATH="$(command -v tailscale)"
 LAUNCHER_PATH="$SERVICE_DIR/drafts-mcp-bridge.sh"
 SERVICE_PATH="$(dirname "$NODE_PATH"):$(dirname "$TAILSCALE_PATH"):$PATH"
 
-if [ ! -f "$ROOT_DIR/.secrets/drafts-mcp-token" ]; then
-  echo "Missing default token file. Run: pnpm token:generate" >&2
+if [ ! -f "$CONFIG_HOME/drafts-mcp-bridge/token" ]; then
+  echo "Missing default token file. Run: scripts/generate-token.sh" >&2
   exit 1
 fi
+node -e '
+  const fs = require("node:fs");
+  for (const [file, directory] of [[process.argv[1], true], [process.argv[1] + "/token", false]]) {
+    const stat = fs.lstatSync(file);
+    if ((directory ? !stat.isDirectory() : !stat.isFile()) || (stat.mode & 0o077) !== 0) {
+      throw new Error("Token directory/file must be private (0700/0600) and not symbolic links.");
+    }
+  }
+' "$CONFIG_HOME/drafts-mcp-bridge"
 
 mkdir -p "$HOME/Library/LaunchAgents" "$SERVICE_DIR" "$LOG_DIR"
 cp "$SOURCE_LAUNCHER_PATH" "$LAUNCHER_PATH"
