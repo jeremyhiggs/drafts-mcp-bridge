@@ -189,8 +189,12 @@ describe("standalone release", () => {
           `<string>${firstInstalledRoot}</string>`,
         );
         await expect(access(path.join(firstInstalledRoot, "node_modules"))).rejects.toThrow();
+        await expect(access(path.join(firstInstalledRoot, ".env"))).rejects.toThrow();
         const installEnv: NodeJS.ProcessEnv = { ...env };
-        delete installEnv.XDG_CONFIG_HOME;
+        const configFile = path.join(env.XDG_CONFIG_HOME, "drafts-mcp-bridge", "config.env");
+        await writeFile(configFile, "DRAFTS_MCP_PORT=0\nDRAFTS_MCP_VERBOSE=true\n", {
+          mode: 0o600,
+        });
         await execute(path.join(releaseRoot, "scripts", "install-launch-agent.sh"), [], {
           env: installEnv,
         });
@@ -202,7 +206,8 @@ describe("standalone release", () => {
         expect(plist).toContain(
           `<string>${installedRoot.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</string>`,
         );
-        expect((await stat(path.join(installedRoot, ".env"))).mode & 0o777).toBe(0o600);
+        await expect(access(path.join(installedRoot, ".env"))).rejects.toThrow();
+        expect((await stat(configFile)).mode & 0o777).toBe(0o600);
         expect(plist).toContain(
           `<string>${env.XDG_CONFIG_HOME.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</string>`,
         );

@@ -79,13 +79,40 @@ function loadEnvSources(env: NodeJS.ProcessEnv, cwd: string): EnvSources {
   const configuredEnvFile = env.DRAFTS_MCP_ENV_FILE?.trim();
   const envFile = configuredEnvFile || path.join(cwd, ".env");
   const fileEnv = loadEnvFile(envFile, configuredEnvFile !== undefined);
+  const configFile = path.join(
+    path.dirname(defaultTokenFile({ ...fileEnv, ...env })),
+    "config.env",
+  );
+  if (existsSync(configFile)) {
+    const directory = lstatSync(path.dirname(configFile));
+    const file = lstatSync(configFile);
+    if (
+      !directory.isDirectory() ||
+      (directory.mode & 0o077) !== 0 ||
+      !file.isFile() ||
+      (file.mode & 0o077) !== 0
+    ) {
+      throw new Error(
+        "The config directory must be private (0700) and config.env must be a private regular file (0600).",
+      );
+    }
+  }
+  const configEnv = loadEnvFile(configFile, false);
 
   return {
     env: {
+      ...configEnv,
       ...fileEnv,
       ...env,
     },
-    tokenFileBaseDir: existsSync(envFile) ? path.dirname(path.resolve(envFile)) : cwd,
+    tokenFileBaseDir:
+      !env.DRAFTS_MCP_TOKEN_FILE &&
+      !fileEnv.DRAFTS_MCP_TOKEN_FILE &&
+      configEnv.DRAFTS_MCP_TOKEN_FILE
+        ? path.dirname(configFile)
+        : existsSync(envFile)
+          ? path.dirname(path.resolve(envFile))
+          : cwd,
   };
 }
 

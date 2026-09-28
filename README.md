@@ -93,10 +93,11 @@ cd drafts-mcp-bridge
 ./scripts/run-tailscale.sh
 ```
 
-The optional `.env` lives in the release directory and survives rebuilds, but
-is never included in the archive. The token lives in the
-shared user config directory, outside the checkout and release. The archive
-contains no `.env` or tokens. From the checkout, `pnpm launchd:install` installs
+The optional `.env` stays local to the checkout or directly run release and is
+never included in the archive or installed LaunchAgent release. The LaunchAgent
+reads settings from `$XDG_CONFIG_HOME/drafts-mcp-bridge/config.env` (default
+`~/.config/drafts-mcp-bridge/config.env`), and the token from the adjacent
+private `token` file. From the checkout, `pnpm launchd:install` installs
 the built release; it fails if you have not run `pnpm release`. From an extracted
 archive, run `./scripts/install-launch-agent.sh`, or pass its folder to the
 checkout installer. The installer copies the release into Application Support,
@@ -137,8 +138,13 @@ compile before starting; release scripts execute the bundled `.mjs` files.
 
 ## Configuration
 
-`.env` is optional. If present, it is loaded before process environment values,
-so shell, launchd, or service-manager env vars override `.env`.
+The optional user config file is `$XDG_CONFIG_HOME/drafts-mcp-bridge/config.env`
+(default `~/.config/drafts-mcp-bridge/config.env`). Keep its directory at mode
+`0700` and the file at `0600`. A local `.env` in the current working directory
+overrides it for direct runs from the checkout or release; process environment
+values override both. The LaunchAgent's installed release has no `.env`, so it
+uses the user config file. For example, put `DRAFTS_MCP_READ_ONLY=false` there
+to enable mutating tools in the LaunchAgent.
 
 ### Where the MCP token comes from
 
@@ -154,17 +160,19 @@ After loading configuration, the bridge selects the first applicable source:
    `~/.config/drafts-mcp-bridge/token` when `XDG_CONFIG_HOME` is unset.
    `XDG_CONFIG_HOME` must be an absolute path.
 
-Both variables can come from the process environment or `.env`; process values
-override the same variable in `.env`. Relative `DRAFTS_MCP_TOKEN_FILE` paths are
-resolved beside the loaded `.env` file, or against the working directory when
-there is no `.env`. Absolute paths are used unchanged. An explicitly selected
+Both variables can come from the process environment, local `.env`, or user
+config file, in that order of precedence. Relative `DRAFTS_MCP_TOKEN_FILE`
+paths from `config.env` resolve beside that file. Values from local `.env` or
+process environment resolve beside the local `.env` when present, or against
+the working directory otherwise. Absolute paths are used unchanged. An explicitly selected
 file that is missing, empty, or has unsafe permissions causes startup to fail;
 it does not fall back to another token.
 
 All startup methods use the same default token, independent of the checkout,
 release location, or working directory. The LaunchAgent installer records the
 config-home path so a custom `XDG_CONFIG_HOME` survives login. Token overrides
-in `.env` are honored by the Tailscale launcher too.
+in a local `.env` are honored by direct Tailscale launches, while the LaunchAgent
+uses only its user config file and process environment.
 
 `pnpm token:generate` (source) or `./scripts/generate-token.sh` (release) always
 writes the default user-config token; it does not write a custom
@@ -239,7 +247,8 @@ This renders `launchd/local.drafts-mcp-bridge.plist.template` to:
 The installer selects `release/drafts-mcp-bridge/` from the checkout, or the
 release containing the installer script. It copies the selected release into
 `~/Library/Application Support/drafts-mcp-bridge/releases/`, validates its
-configuration, and starts the agent from that copy. Once the new agent is
+configuration, and starts the agent from that copy. It does not copy `.env`;
+configure the agent in `~/.config/drafts-mcp-bridge/config.env` instead. Once the new agent is
 running, it removes older installed releases. The service runs an installed
 copy of `scripts/drafts-mcp-bridge.sh`, so
 macOS Login Items show a named bridge entry instead of `pnpm`. The installed

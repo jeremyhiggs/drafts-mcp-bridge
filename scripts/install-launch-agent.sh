@@ -124,15 +124,10 @@ trap cleanup EXIT
 SOURCE_ROOT="$ROOT_DIR"
 ROOT_DIR="$(mktemp -d "$RELEASES_DIR/$RELEASE_VERSION.XXXXXX")"
 NEW_RELEASE="$ROOT_DIR"
-cp -R "$SOURCE_ROOT/." "$ROOT_DIR/"
+for part in dist scripts launchd README.md .env.example package.json THIRD_PARTY_NOTICES.txt; do
+  cp -R "$SOURCE_ROOT/$part" "$ROOT_DIR/"
+done
 cd "$ROOT_DIR"
-if [ -e "$ROOT_DIR/.env" ] || [ -L "$ROOT_DIR/.env" ]; then
-  if [ ! -f "$ROOT_DIR/.env" ] || [ -L "$ROOT_DIR/.env" ]; then
-    echo "Release .env must be a regular file." >&2
-    exit 1
-  fi
-  chmod 600 "$ROOT_DIR/.env"
-fi
 SOURCE_LAUNCHER_PATH="$ROOT_DIR/scripts/drafts-mcp-bridge.sh"
 CONFIG_MODULE="$ROOT_DIR/dist/config.mjs"
 

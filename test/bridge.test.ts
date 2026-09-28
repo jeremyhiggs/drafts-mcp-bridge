@@ -47,6 +47,7 @@ describe("config", () => {
     const config = loadConfig(
       {
         DRAFTS_MCP_TOKEN: "test-token",
+        XDG_CONFIG_HOME: tempDir,
       },
       { cwd: tempDir },
     );
@@ -87,6 +88,23 @@ describe("config", () => {
     expect(config.host).toBe("127.0.0.1");
     expect(config.port).toBe(3060);
     expect(config.readOnly).toBe(true);
+  });
+
+  test("local .env overrides user config, and process env overrides both", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "drafts-bridge-"));
+    const configDir = path.join(tempDir, "config", "drafts-mcp-bridge");
+    await mkdir(configDir, { recursive: true, mode: 0o700 });
+    const configFile = path.join(configDir, "config.env");
+    await writeFile(configFile, "DRAFTS_MCP_PORT=4444\nDRAFTS_MCP_READ_ONLY=false\n", {
+      mode: 0o600,
+    });
+    await writeFile(path.join(tempDir, ".env"), "DRAFTS_MCP_PORT=5555\n");
+    const env = { XDG_CONFIG_HOME: path.dirname(configDir), DRAFTS_MCP_TOKEN: "test-token" };
+
+    expect(loadConfig(env, { cwd: tempDir })).toMatchObject({ port: 5555, readOnly: false });
+    expect(loadConfig({ ...env, DRAFTS_MCP_PORT: "6666" }, { cwd: tempDir }).port).toBe(6666);
+    await chmod(configFile, 0o644);
+    expect(() => loadConfig(env, { cwd: tempDir })).toThrow(/config.env must be a private/);
   });
 
   test("loads non-secret config from .env and bearer token from a private file", async () => {
