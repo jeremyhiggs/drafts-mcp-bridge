@@ -14,10 +14,11 @@ describe("runner scripts", () => {
 
       if (scriptName === "run-tailscale.sh") {
         expect(script).toContain('DRAFTS_MCP_BRIDGE_ROOT="$ROOT_DIR"');
+        expect(script).toContain("DRAFTS_MCP_TAILSCALE_SERVE=true");
         expect(script).toContain("scripts/drafts-mcp-bridge.sh");
       } else if (scriptName === "drafts-mcp-bridge.sh") {
         expect(script).toContain('pnpm --dir "$ROOT_DIR" run build');
-        expect(script).toContain('node "$ROOT_DIR/dist/tailscale-start.js"');
+        expect(script).toContain('node "$ROOT_DIR/dist/index.js"');
       } else {
         expect(script).toContain("pnpm run build");
       }

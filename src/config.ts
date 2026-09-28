@@ -21,6 +21,7 @@ export type BridgeConfig = {
   upstreamArgs: string[];
   upstreamBinPath: string;
   verbose: boolean;
+  tailscaleServe: boolean;
 };
 
 export type ConfigLoadOptions = {
@@ -65,6 +66,7 @@ export function loadConfig(
     upstreamArgs,
     upstreamBinPath: resolvedUpstream.binPath,
     verbose: options.verbose ?? parseBoolean(effectiveEnv.DRAFTS_MCP_VERBOSE, false),
+    tailscaleServe: parseBoolean(effectiveEnv.DRAFTS_MCP_TAILSCALE_SERVE, false),
   };
 }
 

@@ -1,369 +1,161 @@
-# drafts-mcp-bridge
+# Drafts MCP bridge
 
-Authenticated Streamable HTTP bridge for
-[`@agiletortoise/drafts-mcp-server`](https://github.com/agiletortoise/drafts-mcp-server).
+Run the [Drafts MCP server](https://github.com/agiletortoise/drafts-mcp-server) on a Mac and connect to it through authenticated Streamable HTTP. The bridge starts the pinned upstream server locally over stdio. It listens at `http://127.0.0.1:3060/mcp` and can optionally expose that endpoint to your tailnet through Tailscale Serve.
 
-Use this when an MCP client needs remote access to Drafts on your Mac. The
-upstream Drafts MCP server is a local stdio process; this repo wraps it in a
-small authenticated Streamable HTTP server.
+**The LaunchAgent runs locally by default.** Set `DRAFTS_MCP_TAILSCALE_SERVE=true` in `~/.config/drafts-mcp-bridge/config.env` to make it run the Tailscale wrapper too. That registers `/drafts-mcp` as a tailnet-only HTTPS route. The bridge always requires a bearer token; tailnet access does not replace authentication.
 
-What it does:
+## First-time setup: background service
 
-- installs the published `@agiletortoise/drafts-mcp-server` package as a pinned dependency
-- launches that package locally as a child stdio MCP process
-- exposes MCP over HTTP at `/mcp`
-- requires Bearer auth on every request
-- defaults to read-only tool exposure
-- optionally publishes the bridge through Tailscale Serve at `/drafts-mcp`
-
-What it does not do:
-
-- it does not import upstream server internals
-- it does not require the upstream repo to become a monorepo
-- it does not make Drafts itself remote; Drafts stays on the Mac
-
-## Requirements
-
-- macOS with Drafts installed and automation access allowed
-- Node.js 24+
-- pnpm 11+, only for building or running from source
-- Tailscale, only if using `pnpm start:tailscale`
-
-## Quick Start
-
-```sh
-pnpm install
-pnpm token:generate
-pnpm start
-```
-
-Default local endpoint:
-
-```text
-http://127.0.0.1:3060/mcp
-```
-
-Clients must send:
-
-```text
-Authorization: Bearer <contents of ~/.config/drafts-mcp-bridge/token>
-```
-
-Smoke test:
-
-```sh
-TOKEN="$(cat "${XDG_CONFIG_HOME:-$HOME/.config}/drafts-mcp-bridge/token")"
-
-curl -i http://127.0.0.1:3060/mcp \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
-```
-
-`pnpm token:generate` writes `~/.config/drafts-mcp-bridge/token` (or the
-corresponding `XDG_CONFIG_HOME` path) with directory mode `0700` and file mode
-`0600`, and does not print the token. Rotate it with:
-
-```sh
-pnpm token:generate -- --force
-```
-
-## Standalone Release
-
-Build a portable archive from this checkout:
+You need macOS with Drafts installed and automation access allowed, Node.js 24+, and pnpm 11.28.0 to build. Tailscale is needed only if you enable Serve. Run these commands from this checkout:
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm release
+pnpm token:generate
 ```
 
-This produces `release/drafts-mcp-bridge/` and
-`release/drafts-mcp-bridge.tar.gz`. The release bundles the bridge,
-the pinned upstream server, and their JavaScript dependencies. Copy and extract
-the archive on your Mac; no `node_modules`, pnpm, or build step is needed there.
-Node.js 24+ and Drafts are still required, plus Tailscale when using Serve.
+Run `pnpm token:generate` only once for a new installation. It creates a private token at `$XDG_CONFIG_HOME/drafts-mcp-bridge/token`, or `~/.config/drafts-mcp-bridge/token` when `XDG_CONFIG_HOME` is unset. It does not print the token. The token directory has mode `0700`; the file has mode `0600`.
 
-```sh
-tar -xzf drafts-mcp-bridge.tar.gz
-cd drafts-mcp-bridge
-./scripts/generate-token.sh
-./scripts/run-server.sh
-# Or, for tailnet HTTPS:
-./scripts/run-tailscale.sh
+If you want the LaunchAgent to register a Tailscale Serve route, install and connect Tailscale, then put this line in `$XDG_CONFIG_HOME/drafts-mcp-bridge/config.env` (default `~/.config/drafts-mcp-bridge/config.env`) **before installing the agent**:
+
+```dotenv
+DRAFTS_MCP_TAILSCALE_SERVE=true
 ```
 
-The optional `.env` stays local to the checkout or directly run release and is
-never included in the archive or installed LaunchAgent release. The LaunchAgent
-reads settings from `$XDG_CONFIG_HOME/drafts-mcp-bridge/config.env` (default
-`~/.config/drafts-mcp-bridge/config.env`), and the token from the adjacent
-private `token` file. From the checkout, `pnpm launchd:install` installs
-the built release; it fails if you have not run `pnpm release`. From an extracted
-archive, run `./scripts/install-launch-agent.sh`, or pass its folder to the
-checkout installer. The installer copies the release into Application Support,
-then removes older installed versions once the new agent is running.
-Rotate a release token with `./scripts/generate-token.sh --force`.
-Bundled dependency licenses are included in `THIRD_PARTY_NOTICES.txt`.
+Keep `config.env` at mode `0600`. Without this setting, the LaunchAgent serves only on localhost. The installer requires the `tailscale` command only when this setting is true.
 
-Check an extracted build without starting the server:
-
-```sh
-./scripts/run-server.sh --version
-```
-
-From source, use `pnpm start --version`.
-
-The startup log and authenticated MCP initialization response report the same
-version. Standalone builds append a 12-character fingerprint of their bundled
-code and runtime scripts to the package version, such as `0.1.0+1a2b3c4d5e6f`. Compare
-that full value with a candidate build to see whether the running code differs.
-Source runs report the package version without a fingerprint; source scripts
-rebuild before starting.
-
-Rebuild the release after changing source code. Source checkout commands still
-compile before starting; release scripts execute the bundled `.mjs` files.
-
-## Security
-
-- Bearer auth is required on every request.
-- The bridge refuses to start without `DRAFTS_MCP_TOKEN`,
-  `DRAFTS_MCP_TOKEN_FILE`, or the default user-config token.
-- Token files must be regular files, not symbolic links, with no group/world
-  permissions. The default token directory must also have no group/world permissions.
-- The default bind host is `127.0.0.1`.
-- Read-only mode is enabled by default. Set `DRAFTS_MCP_READ_ONLY=false` only
-  when remote mutation is intended.
-- The upstream Drafts server stays local to the Mac and is launched over
-  stdio; no upstream internals are imported.
-
-## Configuration
-
-The optional user config file is `$XDG_CONFIG_HOME/drafts-mcp-bridge/config.env`
-(default `~/.config/drafts-mcp-bridge/config.env`). Keep its directory at mode
-`0700` and the file at `0600`. A local `.env` in the current working directory
-overrides it for direct runs from the checkout or release; process environment
-values override both. The LaunchAgent's installed release has no `.env`, so it
-uses the user config file. For example, put `DRAFTS_MCP_READ_ONLY=false` there
-to enable mutating tools in the LaunchAgent.
-
-### Where the MCP token comes from
-
-This is a locally generated bearer token for authenticating clients to the bridge.
-Drafts and Tailscale do not supply it. Configure your MCP client to send the same
-value in its `Authorization: Bearer ...` header.
-
-After loading configuration, the bridge selects the first applicable source:
-
-1. A non-empty `DRAFTS_MCP_TOKEN` from the effective environment.
-2. The file named by `DRAFTS_MCP_TOKEN_FILE`.
-3. `$XDG_CONFIG_HOME/drafts-mcp-bridge/token`, or
-   `~/.config/drafts-mcp-bridge/token` when `XDG_CONFIG_HOME` is unset.
-   `XDG_CONFIG_HOME` must be an absolute path.
-
-Both variables can come from the process environment, local `.env`, or user
-config file, in that order of precedence. Relative `DRAFTS_MCP_TOKEN_FILE`
-paths from `config.env` resolve beside that file. Values from local `.env` or
-process environment resolve beside the local `.env` when present, or against
-the working directory otherwise. Absolute paths are used unchanged. An explicitly selected
-file that is missing, empty, or has unsafe permissions causes startup to fail;
-it does not fall back to another token.
-
-All startup methods use the same default token, independent of the checkout,
-release location, or working directory. The LaunchAgent installer records the
-config-home path so a custom `XDG_CONFIG_HOME` survives login. Token overrides
-in a local `.env` are honored by direct Tailscale launches, while the LaunchAgent
-uses only its user config file and process environment.
-
-`pnpm token:generate` (source) or `./scripts/generate-token.sh` (release) always
-writes the default user-config token; it does not write a custom
-`DRAFTS_MCP_TOKEN_FILE`. It creates the application directory with mode `0700`
-and the token with mode `0600`; rotation also repairs these permissions.
-The LaunchAgent installer validates the selected token using the same
-configuration and permission checks as startup.
-
-Generate the token once in the user config directory, then configure the MCP
-client with its value. Source checkouts and extracted releases share that token.
-The archive contains no token.
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `DRAFTS_MCP_TOKEN_FILE` | User-config `drafts-mcp-bridge/token` when present | Private file containing the bearer token. |
-| `DRAFTS_MCP_TOKEN` | none | Direct bearer token override. Avoid inline shell usage because it can leak through history. |
-| `DRAFTS_MCP_ENV_FILE` | `.env` when present | Optional dotenv file path. If explicitly set, the file must exist. |
-| `DRAFTS_MCP_HOST` | `127.0.0.1` | HTTP bind host. Keep this as `127.0.0.1` for Tailscale Serve mode. |
-| `DRAFTS_MCP_PORT` | `3060` | HTTP bind port. |
-| `DRAFTS_MCP_READ_ONLY` | `true` | Set to `false` to expose mutating upstream tools. |
-| `DRAFTS_MCP_VERBOSE` | `false` | Set to `true` for redacted request logs. |
-| `DRAFTS_MCP_UPSTREAM_COMMAND` | Node executable | Optional override for the stdio upstream command. |
-| `DRAFTS_MCP_UPSTREAM_ARGS` | resolved upstream bin path | Optional override args. Must be a JSON array of strings, such as `["--flag", "value"]`. Shell-like strings are no longer accepted. |
-
-To bind plain HTTP to one trusted interface, set `DRAFTS_MCP_HOST` to that
-interface's IP address, such as a Tailscale or LAN address. Setting it to
-`0.0.0.0` exposes the bridge on every IPv4 interface and is discouraged. Direct
-binding is not HTTPS; prefer Tailscale Serve for remote access.
-
-## Tailscale Serve
-
-For tailnet HTTPS:
-
-```sh
-pnpm start:tailscale
-```
-
-This starts the bridge on `127.0.0.1:${DRAFTS_MCP_PORT:-3060}` and registers a
-persistent background Tailscale Serve route. With the default port, the Serve
-command is:
-
-```sh
-tailscale serve --bg --set-path /drafts-mcp http://127.0.0.1:3060/mcp
-```
-
-Remote endpoint:
-
-```text
-https://<mac-name>.<tailnet>.ts.net/drafts-mcp
-```
-
-The wrapper accepts an existing `/drafts-mcp` route when it already points to
-the expected local bridge. It refuses to overwrite a route pointing elsewhere,
-leaves unrelated Serve routes alone, and does not run `tailscale serve reset`.
-
-## Run in the Background
-
-Use a macOS LaunchAgent, not a LaunchDaemon, so Drafts automation runs in the
-logged-in user's GUI session.
+Build and install:
 
 ```sh
 pnpm release
 pnpm launchd:install
 ```
 
-This renders `launchd/local.drafts-mcp-bridge.plist.template` to:
+The installer checks the token and configuration, copies the standalone release into `~/Library/Application Support/drafts-mcp-bridge/releases/`, and starts `local.drafts-mcp-bridge`. The installed copy needs Node.js, but neither pnpm nor `node_modules`. After the new agent is running, the installer removes older installed releases. It does not copy a local `.env` into the installed release. When Serve is enabled, the LaunchAgent registers `/drafts-mcp` as part of startup.
 
-```text
-~/Library/LaunchAgents/local.drafts-mcp-bridge.plist
-```
-
-The installer selects `release/drafts-mcp-bridge/` from the checkout, or the
-release containing the installer script. It copies the selected release into
-`~/Library/Application Support/drafts-mcp-bridge/releases/`, validates its
-configuration, and starts the agent from that copy. It does not copy `.env`;
-configure the agent in `~/.config/drafts-mcp-bridge/config.env` instead. Once the new agent is
-running, it removes older installed releases. The service runs an installed
-copy of `scripts/drafts-mcp-bridge.sh`, so
-macOS Login Items show a named bridge entry instead of `pnpm`. The installed
-launcher lives outside `~/Documents` to avoid macOS background-item privacy
-restrictions. Startup runs bundled JavaScript without pnpm or `node_modules`.
-You can move or remove the source release after installation. The agent keeps
-the bridge alive and writes logs to:
-
-```text
-~/Library/Logs/drafts-mcp-bridge/
-```
-
-Check status:
+Check the service:
 
 ```sh
 launchctl print "gui/$(id -u)/local.drafts-mcp-bridge"
-pnpm launchd:logs
 ```
 
-Uninstall:
+If Serve is enabled, check its route:
 
 ```sh
-pnpm launchd:uninstall
+tailscale serve status
 ```
 
-## Upstream Launch
+Look for `/drafts-mcp` pointing to `http://127.0.0.1:3060/mcp`. Configure your remote MCP client with the URL shown by `tailscale serve status`, followed by `/drafts-mcp`, and this header:
 
-The upstream package is pinned in `package.json`. Release builds launch the
-bundled `dist/upstream.mjs`; source builds:
+```text
+Authorization: Bearer <contents of ~/.config/drafts-mcp-bridge/token>
+```
 
-1. resolves `@agiletortoise/drafts-mcp-server/package.json`
-2. reads the package `bin` entry
-3. starts `node <resolved-bin-path>` as a child stdio MCP process
+With a custom `XDG_CONFIG_HOME`, read the token from that directory instead. A client on the Mac can always use `http://127.0.0.1:3060/mcp` with the same header, whether Serve is enabled or not.
 
-Override launch only when testing a different stdio server:
+## Configuration
+
+For the LaunchAgent, put optional settings in `$XDG_CONFIG_HOME/drafts-mcp-bridge/config.env` (default `~/.config/drafts-mcp-bridge/config.env`). Keep that file at mode `0600` and its directory at `0700`. You do not need a config file for the defaults: the bridge binds to `127.0.0.1:3060` and exposes read-only tools.
+
+For example, put this line in `config.env` only if remote clients should be able to change Drafts data:
+
+```dotenv
+DRAFTS_MCP_READ_ONLY=false
+```
+
+A `.env` in the checkout or a directly run release is a **local override**. Configuration is loaded in this order, with later values winning: user `config.env`, local `.env`, process environment. The installed LaunchAgent has no `.env`, so it uses the user config file. An explicit `DRAFTS_MCP_ENV_FILE` selects a local override file and must point to an existing file. The installer records `XDG_CONFIG_HOME` in the LaunchAgent so a custom config location survives login.
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `DRAFTS_MCP_HOST` | `127.0.0.1` | Bind address. Tailscale Serve mode requires `127.0.0.1` or `localhost`. |
+| `DRAFTS_MCP_PORT` | `3060` | Local HTTP port. Keep the default for the easiest Serve setup. |
+| `DRAFTS_MCP_READ_ONLY` | `true` | Set to `false` to expose mutating tools. |
+| `DRAFTS_MCP_VERBOSE` | `false` | Enable redacted request logs. |
+| `DRAFTS_MCP_TAILSCALE_SERVE` | `false` | Register `/drafts-mcp` with Tailscale Serve when the LaunchAgent starts. |
+| `DRAFTS_MCP_TOKEN_FILE` | User-config `token` file | Use another private bearer-token file. |
+| `DRAFTS_MCP_TOKEN` | unset | Direct token override; avoid typing it into shell history. |
+| `DRAFTS_MCP_UPSTREAM_COMMAND` | Node.js | Override the stdio server command for testing. |
+| `DRAFTS_MCP_UPSTREAM_ARGS` | Bundled upstream entry point | JSON array of arguments for an override command. |
+
+A non-empty `DRAFTS_MCP_TOKEN` takes precedence over `DRAFTS_MCP_TOKEN_FILE`; otherwise the bridge reads the default user-config token. Token files must be regular files, not symlinks, with no group or world permissions. A missing or unsafe explicitly selected token file makes startup fail. Relative token paths from `config.env` resolve beside that file. Relative paths from a local `.env` or process environment resolve beside the local `.env` when present, or against the working directory otherwise.
+
+The bridge allows only read-only upstream tools by default. `drafts_open` remains available and may open Drafts or bring a draft into the editor; mutating tools and action execution are hidden. Directly binding plain HTTP to a LAN or Tailscale IP is possible through `DRAFTS_MCP_HOST`, but it is not HTTPS. Prefer the default loopback bind with Tailscale Serve.
+
+## Other ways to run
+
+For a foreground, local-only server from the checkout (regardless of the LaunchAgent's Serve setting):
 
 ```sh
-DRAFTS_MCP_UPSTREAM_COMMAND=node \
-DRAFTS_MCP_UPSTREAM_ARGS='["/absolute/path/to/custom/server.js"]' \
 pnpm start
 ```
 
-## Read-Only Mode
-
-When `DRAFTS_MCP_READ_ONLY` is unset or true, only these tools are exposed:
-
-- `drafts_list_workspaces`
-- `drafts_list_tags`
-- `drafts_get_tag`
-- `drafts_get_current_workspace`
-- `drafts_get_current`
-- `drafts_get_workspace_drafts`
-- `drafts_get_drafts`
-- `drafts_get_draft`
-- `drafts_search`
-- `drafts_list_actions`
-- `drafts_open`
-
-Mutating tools, action execution, `drafts_open_workspace`, and unknown future
-tools are blocked in read-only mode. `drafts_open` is intentionally allowed: it
-does not change draft data and can open Drafts or bring a selected draft into
-the editor. The allowlist is tied to the pinned upstream package inventory and
-must be reviewed when that dependency changes.
-
-## Diagnostics
-
-Enable redacted request logs:
+For a foreground server that also registers the Tailscale Serve route (regardless of the config setting):
 
 ```sh
-pnpm start:tailscale -- --verbose
+pnpm start:tailscale
 ```
 
-or:
+Stop the LaunchAgent first if you use either foreground command on the same port. The Serve route is persistent; the wrapper accepts an existing `/drafts-mcp` route when it points to this bridge, refuses to overwrite a different target, and leaves unrelated Serve routes alone.
+
+Turning `DRAFTS_MCP_TAILSCALE_SERVE` back to `false` stops future registration, but a previously created background Serve route remains until you remove it. Remove only this path with `tailscale serve --https=443 --set-path=/drafts-mcp off`, then check `tailscale serve status`. Do not use `tailscale serve reset` if you have other routes. See [Tailscale's Serve CLI reference](https://tailscale.com/docs/reference/tailscale-cli/serve#disable-tailscale-serve).
+
+To build an archive for another Mac:
 
 ```sh
-DRAFTS_MCP_VERBOSE=true pnpm start:tailscale
+pnpm release
 ```
 
-Verbose logs include method, path, status, duration, remote address,
-forwarded-for, user agent, content type, accept header, whether an Authorization
-header was present, and whether bearer auth passed. They do not include bearer
-tokens or request bodies.
-
-If a client gets `502 Bad Gateway` and no bridge request log appears, the request
-did not reach the bridge. Check:
+Copy `release/drafts-mcp-bridge.tar.gz` to that Mac, then extract and run it:
 
 ```sh
-tailscale serve status --json
-lsof -nP -iTCP:3060 -sTCP:LISTEN
+tar -xzf drafts-mcp-bridge.tar.gz
+cd drafts-mcp-bridge
+./scripts/generate-token.sh  # only if that Mac has no token yet
+./scripts/install-launch-agent.sh
 ```
 
-If the bridge logs `statusCode:401`, the request reached the bridge but the
-token was missing or invalid.
+You can run `./scripts/run-server.sh` or `./scripts/run-tailscale.sh` in the foreground instead. The archive bundles the bridge, pinned upstream server, scripts, and dependency licenses. It contains no `.env`, token, `node_modules`, or pnpm dependency. Node.js 24+ and Drafts are still required; Tailscale is required only when Serve is enabled.
+
+Check a release version without starting it:
+
+```sh
+./scripts/run-server.sh --version
+```
+
+Release versions append a fingerprint of the bundled code and runtime scripts, such as `0.1.0+1a2b3c4d5e6f`. Source runs report the package version without that fingerprint. The startup log and MCP initialization response report the running version.
+
+## Updating and troubleshooting
+
+Rebuild and reinstall to update the LaunchAgent:
+
+```sh
+pnpm release
+pnpm launchd:install
+```
+
+The agent runs from its Application Support copy, so rebuilding the checkout alone does not update it. The installer keeps the user config and token outside the release and removes the prior installed version only after the replacement starts.
+
+```sh
+pnpm launchd:logs
+launchctl print "gui/$(id -u)/local.drafts-mcp-bridge"
+tailscale serve status
+```
+
+A `401` response means the request reached the bridge without a valid bearer token. A `502` with no bridge request log suggests the request did not reach the bridge; check `tailscale serve status` and the local listener with `lsof -nP -iTCP:3060 -sTCP:LISTEN`. To enable redacted request logs, set `DRAFTS_MCP_VERBOSE=true` in the user config file and reinstall. Logs omit tokens and request bodies.
+
+Rotate the token with `pnpm token:generate -- --force`, then update your MCP clients. `pnpm launchd:uninstall` removes the LaunchAgent; it does not remove the user config, token, installed release files, or the persistent Tailscale Serve route.
 
 ## Development
 
-The project pins pnpm 11.28.0. CI checks formatting, lint, types, tests, and builds.
-Dependency audits cover runtime and development dependencies on pull requests,
-pushes to `main`, and daily at 00:00 UTC. Moderate or higher severity advisories
-fail the audit job. Run the same scan locally with `pnpm audit --audit-level moderate`.
+The project pins pnpm 11.28.0. CI checks formatting, lint, types, tests, builds, and runtime plus development dependency advisories on pull requests and pushes to `main`. The dependency audit also runs daily at 00:00 UTC and fails on moderate or higher severity advisories.
 
 ```sh
-pnpm install
+pnpm install --frozen-lockfile
 pnpm run format:check
 pnpm run lint
 pnpm run typecheck
 pnpm test
 pnpm run build
+pnpm audit --audit-level moderate
 ```
 
-Most tests use a fake stdio MCP child process. Release tests extract the archive
-outside the repository and start the bundled upstream server with pnpm disabled
-and no `node_modules`. They list tools, call a read-only tool, and check
-authentication with AppleScript and Tailscale commands simulated; they do not
-access your Drafts data.
-
-`pnpm start`, `pnpm start:tailscale`, and `pnpm token:generate` run
-`pnpm run build` before executing compiled output.
+Tests use a fake stdio MCP server and a standalone archive without `node_modules`. AppleScript, Tailscale, and launchctl commands are simulated; tests do not access your Drafts data.

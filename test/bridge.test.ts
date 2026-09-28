@@ -53,6 +53,7 @@ describe("config", () => {
     );
 
     expect(config.readOnly).toBe(true);
+    expect(config.tailscaleServe).toBe(false);
   });
 
   test("enables verbose mode from env or load options", () => {
@@ -95,14 +96,25 @@ describe("config", () => {
     const configDir = path.join(tempDir, "config", "drafts-mcp-bridge");
     await mkdir(configDir, { recursive: true, mode: 0o700 });
     const configFile = path.join(configDir, "config.env");
-    await writeFile(configFile, "DRAFTS_MCP_PORT=4444\nDRAFTS_MCP_READ_ONLY=false\n", {
-      mode: 0o600,
-    });
+    await writeFile(
+      configFile,
+      "DRAFTS_MCP_PORT=4444\nDRAFTS_MCP_READ_ONLY=false\nDRAFTS_MCP_TAILSCALE_SERVE=true\n",
+      {
+        mode: 0o600,
+      },
+    );
     await writeFile(path.join(tempDir, ".env"), "DRAFTS_MCP_PORT=5555\n");
     const env = { XDG_CONFIG_HOME: path.dirname(configDir), DRAFTS_MCP_TOKEN: "test-token" };
 
-    expect(loadConfig(env, { cwd: tempDir })).toMatchObject({ port: 5555, readOnly: false });
+    expect(loadConfig(env, { cwd: tempDir })).toMatchObject({
+      port: 5555,
+      readOnly: false,
+      tailscaleServe: true,
+    });
     expect(loadConfig({ ...env, DRAFTS_MCP_PORT: "6666" }, { cwd: tempDir }).port).toBe(6666);
+    expect(
+      loadConfig({ ...env, DRAFTS_MCP_TAILSCALE_SERVE: "false" }, { cwd: tempDir }).tailscaleServe,
+    ).toBe(false);
     await chmod(configFile, 0o644);
     expect(() => loadConfig(env, { cwd: tempDir })).toThrow(/config.env must be a private/);
   });
@@ -387,6 +399,7 @@ async function startTestBridge(options: { verbose?: boolean } = {}): Promise<Bri
       upstreamArgs: [fakeUpstreamPath],
       upstreamBinPath: fakeUpstreamPath,
       verbose: options.verbose ?? false,
+      tailscaleServe: false,
     },
     upstream,
   );
