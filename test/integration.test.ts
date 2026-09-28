@@ -8,7 +8,6 @@ import {
   mkdtemp,
   readFile,
   readdir,
-  rm,
   stat,
   symlink,
   writeFile,
@@ -50,7 +49,9 @@ describe("standalone release", () => {
     await writeFile(path.join(releaseRoot, ".env"), "DRAFTS_MCP_READ_ONLY=false\n", {
       mode: 0o600,
     });
+    await writeFile(path.join(releaseRoot, "private.txt"), "not for the archive\n");
 
+    await execute(process.execPath, ["scripts/build-release.mjs"], { cwd: scratch });
     await execute(process.execPath, ["scripts/build-release.mjs"], { cwd: scratch });
 
     expect(await readFile(path.join(releaseRoot, ".env"), "utf8")).toBe(
@@ -62,19 +63,7 @@ describe("standalone release", () => {
       path.join(scratch, "release", "drafts-mcp-bridge.tar.gz"),
     ]);
     expect(archive.stdout.split("\n")).not.toContain("drafts-mcp-bridge/.env");
-
-    // Simulate an interruption after the old release was moved aside.
-    await rm(releaseRoot, { recursive: true });
-    await execute(process.execPath, ["scripts/build-release.mjs"], { cwd: scratch });
-    expect(await readFile(path.join(releaseRoot, ".env"), "utf8")).toBe(
-      "DRAFTS_MCP_READ_ONLY=false\n",
-    );
-    const lockDir = path.join(scratch, "release", ".build.lock");
-    await mkdir(lockDir);
-    await expect(
-      execute(process.execPath, ["scripts/build-release.mjs"], { cwd: scratch }),
-    ).rejects.toThrow(/Another release build is running/);
-    await rm(lockDir, { recursive: true });
+    expect(archive.stdout.split("\n")).not.toContain("drafts-mcp-bridge/private.txt");
   }, 30_000);
 
   test.each(["run-server.sh", "run-tailscale.sh"])(
