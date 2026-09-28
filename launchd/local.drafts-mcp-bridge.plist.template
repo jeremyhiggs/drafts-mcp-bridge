@@ -18,6 +18,8 @@
   <dict>
     <key>DRAFTS_MCP_BRIDGE_ROOT</key>
     <string>__REPO_ROOT__</string>
+    <key>XDG_CONFIG_HOME</key>
+    <string>__CONFIG_HOME__</string>
     <key>PATH</key>
     <string>__PATH__</string>
   </dict>

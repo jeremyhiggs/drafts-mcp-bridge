@@ -7,16 +7,17 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  realpathSync,
   renameSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { DEFAULT_TOKEN_FILE } from "./config.js";
+import { defaultTokenFile, loadEffectiveEnv } from "./config.js";
 
 export type GenerateTokenOptions = {
-  cwd?: string;
+  env?: NodeJS.ProcessEnv;
   force?: boolean;
 };
 
@@ -26,8 +27,7 @@ export type GenerateTokenResult = {
 };
 
 export function generateToken(options: GenerateTokenOptions = {}): GenerateTokenResult {
-  const cwd = options.cwd ?? process.cwd();
-  const tokenFilePath = path.resolve(cwd, DEFAULT_TOKEN_FILE);
+  const tokenFilePath = defaultTokenFile(loadEffectiveEnv(options.env));
   const tokenDir = path.dirname(tokenFilePath);
   const token = `${randomBytes(32).toString("base64url")}\n`;
   const exists = existsSync(tokenFilePath);
@@ -35,16 +35,17 @@ export function generateToken(options: GenerateTokenOptions = {}): GenerateToken
   if (exists) {
     const tokenStat = lstatSync(tokenFilePath);
     if (tokenStat.isSymbolicLink() || !tokenStat.isFile()) {
-      throw new Error(`${DEFAULT_TOKEN_FILE} must be a regular file and not a symbolic link.`);
+      throw new Error("The token must be a regular file and not a symbolic link.");
     }
   }
 
   if (exists && !options.force) {
-    throw new Error(
-      `${DEFAULT_TOKEN_FILE} already exists. Use pnpm token:generate -- --force to rotate it.`,
-    );
+    throw new Error("The token already exists. Use --force to rotate it.");
   }
 
+  if (existsSync(tokenDir) && !lstatSync(tokenDir).isDirectory()) {
+    throw new Error("The token directory must be a directory and not a symbolic link.");
+  }
   mkdirSync(tokenDir, {
     recursive: true,
     mode: 0o700,
@@ -88,7 +89,7 @@ export function parseArgs(args: string[]): GenerateTokenOptions {
     };
   }
 
-  throw new Error("Usage: pnpm token:generate [-- --force]");
+  throw new Error("Usage: scripts/generate-token.sh [--force]");
 }
 
 export function run(args: string[] = process.argv.slice(2)): void {
@@ -98,7 +99,7 @@ export function run(args: string[] = process.argv.slice(2)): void {
   console.error("Keep this file private; the token value was not printed.");
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   try {
     run();
   } catch (error: unknown) {

@@ -1,9 +1,16 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import { parse as parseDotenv } from "dotenv";
 import { resolveDefaultUpstream } from "./upstream.js";
 
-export const DEFAULT_TOKEN_FILE = ".secrets/drafts-mcp-token";
+export function defaultTokenFile(env: NodeJS.ProcessEnv = process.env): string {
+  const configHome = env.XDG_CONFIG_HOME?.trim() || path.join(env.HOME || homedir(), ".config");
+  if (!path.isAbsolute(configHome)) {
+    throw new Error("XDG_CONFIG_HOME must be an absolute path.");
+  }
+  return path.join(configHome, "drafts-mcp-bridge", "token");
+}
 
 export type BridgeConfig = {
   token: string;
@@ -33,10 +40,10 @@ export function loadConfig(
   const cwd = options.cwd ?? process.cwd();
   const sources = loadEnvSources(env, cwd);
   const effectiveEnv = sources.env;
-  const token = resolveToken(effectiveEnv, sources.tokenFileBaseDir, cwd);
+  const token = resolveToken(effectiveEnv, sources.tokenFileBaseDir);
   if (!token) {
     throw new Error(
-      `DRAFTS_MCP_TOKEN, DRAFTS_MCP_TOKEN_FILE, or ${DEFAULT_TOKEN_FILE} is required; refusing to start without bearer auth.`,
+      "A bearer token is required. Run scripts/generate-token.sh or set DRAFTS_MCP_TOKEN / DRAFTS_MCP_TOKEN_FILE.",
     );
   }
 
@@ -72,13 +79,40 @@ function loadEnvSources(env: NodeJS.ProcessEnv, cwd: string): EnvSources {
   const configuredEnvFile = env.DRAFTS_MCP_ENV_FILE?.trim();
   const envFile = configuredEnvFile || path.join(cwd, ".env");
   const fileEnv = loadEnvFile(envFile, configuredEnvFile !== undefined);
+  const configFile = path.join(
+    path.dirname(defaultTokenFile({ ...fileEnv, ...env })),
+    "config.env",
+  );
+  if (existsSync(configFile)) {
+    const directory = lstatSync(path.dirname(configFile));
+    const file = lstatSync(configFile);
+    if (
+      !directory.isDirectory() ||
+      (directory.mode & 0o077) !== 0 ||
+      !file.isFile() ||
+      (file.mode & 0o077) !== 0
+    ) {
+      throw new Error(
+        "The config directory must be private (0700) and config.env must be a private regular file (0600).",
+      );
+    }
+  }
+  const configEnv = loadEnvFile(configFile, false);
 
   return {
     env: {
+      ...configEnv,
       ...fileEnv,
       ...env,
     },
-    tokenFileBaseDir: existsSync(envFile) ? path.dirname(path.resolve(envFile)) : cwd,
+    tokenFileBaseDir:
+      !env.DRAFTS_MCP_TOKEN_FILE &&
+      !fileEnv.DRAFTS_MCP_TOKEN_FILE &&
+      configEnv.DRAFTS_MCP_TOKEN_FILE
+        ? path.dirname(configFile)
+        : existsSync(envFile)
+          ? path.dirname(path.resolve(envFile))
+          : cwd,
   };
 }
 
@@ -93,11 +127,7 @@ function loadEnvFile(filePath: string, required: boolean): Record<string, string
   return parseDotenv(readFileSync(filePath));
 }
 
-function resolveToken(
-  env: NodeJS.ProcessEnv,
-  tokenFileBaseDir: string,
-  cwd: string,
-): string | undefined {
+function resolveToken(env: NodeJS.ProcessEnv, tokenFileBaseDir: string): string | undefined {
   const directToken = env.DRAFTS_MCP_TOKEN?.trim();
   if (directToken) {
     return directToken;
@@ -105,11 +135,15 @@ function resolveToken(
 
   const tokenFile = env.DRAFTS_MCP_TOKEN_FILE?.trim();
   if (!tokenFile) {
-    const defaultTokenFilePath = path.resolve(cwd, DEFAULT_TOKEN_FILE);
+    const defaultTokenFilePath = defaultTokenFile(env);
     if (!existsSync(defaultTokenFilePath)) {
       return undefined;
     }
 
+    const directory = lstatSync(path.dirname(defaultTokenFilePath));
+    if (!directory.isDirectory() || (directory.mode & 0o077) !== 0) {
+      throw new Error("The default token directory must be a private directory (0700).");
+    }
     return readTokenFile(defaultTokenFilePath);
   }
 
@@ -126,7 +160,7 @@ function readTokenFile(tokenFilePath: string): string | undefined {
 }
 
 function assertPrivateFile(filePath: string): void {
-  const stat = statSync(filePath);
+  const stat = lstatSync(filePath);
 
   if (!stat.isFile()) {
     throw new Error(`DRAFTS_MCP_TOKEN_FILE must point to a regular file: ${filePath}`);
@@ -171,16 +205,15 @@ export function parseArgsEnv(value: string | undefined): string[] {
     return [];
   }
 
-  const trimmed = value.trim();
-  if (trimmed.startsWith("[")) {
-    const parsed = JSON.parse(trimmed) as unknown;
+  try {
+    const parsed: unknown = JSON.parse(value);
     if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === "string")) {
-      throw new Error("DRAFTS_MCP_UPSTREAM_ARGS JSON must be an array of strings.");
+      throw new Error("Invalid argument array");
     }
     return parsed;
+  } catch {
+    throw new Error("DRAFTS_MCP_UPSTREAM_ARGS must be a JSON array of strings.");
   }
-
-  return splitShellLike(trimmed);
 }
 
 function parsePort(value: string | undefined): number {
@@ -194,62 +227,4 @@ function parsePort(value: string | undefined): number {
   }
 
   return port;
-}
-
-function splitShellLike(input: string): string[] {
-  const args: string[] = [];
-  let current = "";
-  let quote: "'" | '"' | undefined;
-  let escaping = false;
-
-  for (const char of input) {
-    if (escaping) {
-      current += char;
-      escaping = false;
-      continue;
-    }
-
-    if (char === "\\") {
-      escaping = true;
-      continue;
-    }
-
-    if (quote !== undefined) {
-      if (char === quote) {
-        quote = undefined;
-      } else {
-        current += char;
-      }
-      continue;
-    }
-
-    if (char === "'" || char === '"') {
-      quote = char;
-      continue;
-    }
-
-    if (/\s/.test(char)) {
-      if (current.length > 0) {
-        args.push(current);
-        current = "";
-      }
-      continue;
-    }
-
-    current += char;
-  }
-
-  if (escaping) {
-    current += "\\";
-  }
-
-  if (quote !== undefined) {
-    throw new Error("DRAFTS_MCP_UPSTREAM_ARGS contains an unterminated quote.");
-  }
-
-  if (current.length > 0) {
-    args.push(current);
-  }
-
-  return args;
 }

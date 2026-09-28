@@ -1,9 +1,9 @@
 export type RuntimeArgs = {
-  verbose: boolean;
+  verbose: boolean | undefined;
 };
 
 export function parseRuntimeArgs(args: string[]): RuntimeArgs {
-  let verbose = false;
+  let verbose: boolean | undefined;
 
   for (const arg of args) {
     switch (arg) {

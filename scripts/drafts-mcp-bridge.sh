@@ -10,12 +10,9 @@ if [ -z "${DRAFTS_MCP_ENV_FILE:-}" ] && [ -f "$ROOT_DIR/.env" ]; then
   export DRAFTS_MCP_ENV_FILE="$ROOT_DIR/.env"
 fi
 
-if [ -z "${DRAFTS_MCP_TOKEN:-}" ] \
-  && [ -z "${DRAFTS_MCP_TOKEN_FILE:-}" ] \
-  && [ -f "$ROOT_DIR/.secrets/drafts-mcp-token" ]; then
-  export DRAFTS_MCP_TOKEN_FILE="$ROOT_DIR/.secrets/drafts-mcp-token"
+if [ -f "$ROOT_DIR/dist/tailscale-start.mjs" ]; then
+  exec node "$ROOT_DIR/dist/tailscale-start.mjs" "$@"
 fi
 
 pnpm --dir "$ROOT_DIR" run build
-
 exec node "$ROOT_DIR/dist/tailscale-start.js" "$@"

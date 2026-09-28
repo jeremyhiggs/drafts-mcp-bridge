@@ -7,25 +7,23 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 
 describe("runner scripts", () => {
-  test.each([
-    "run-server.sh",
-    "run-tailscale.sh",
-    "generate-token.sh",
-    "drafts-mcp-bridge.sh",
-  ])("%s rebuilds before executing compiled output", async (scriptName) => {
-    const script = await readFile(path.join(repoRoot, "scripts", scriptName), "utf8");
+  test.each(["run-server.sh", "run-tailscale.sh", "generate-token.sh", "drafts-mcp-bridge.sh"])(
+    "%s rebuilds before executing compiled output",
+    async (scriptName) => {
+      const script = await readFile(path.join(repoRoot, "scripts", scriptName), "utf8");
 
-    if (scriptName === "run-tailscale.sh") {
-      expect(script).toContain('DRAFTS_MCP_BRIDGE_ROOT="$ROOT_DIR"');
-      expect(script).toContain("scripts/drafts-mcp-bridge.sh");
-    } else if (scriptName === "drafts-mcp-bridge.sh") {
-      expect(script).toContain('pnpm --dir "$ROOT_DIR" run build');
-      expect(script).toContain('node "$ROOT_DIR/dist/tailscale-start.js"');
-    } else {
-      expect(script).toContain("pnpm run build");
-    }
-    expect(script).not.toMatch(/if \[ ! -f dist\//);
-  });
+      if (scriptName === "run-tailscale.sh") {
+        expect(script).toContain('DRAFTS_MCP_BRIDGE_ROOT="$ROOT_DIR"');
+        expect(script).toContain("scripts/drafts-mcp-bridge.sh");
+      } else if (scriptName === "drafts-mcp-bridge.sh") {
+        expect(script).toContain('pnpm --dir "$ROOT_DIR" run build');
+        expect(script).toContain('node "$ROOT_DIR/dist/tailscale-start.js"');
+      } else {
+        expect(script).toContain("pnpm run build");
+      }
+      expect(script).not.toMatch(/if \[ ! -f dist\//);
+    },
+  );
 
   test("launch agent log script tails stdout and stderr logs", async () => {
     const script = await readFile(
@@ -63,6 +61,8 @@ describe("runner scripts", () => {
     );
 
     expect(script).toContain('LABEL="local.drafts-mcp-bridge"');
+    expect(script).toContain('ROOT_DIR="$ROOT_DIR/release/drafts-mcp-bridge"');
+    expect(script).toContain("Run pnpm release first");
     expect(script).toContain('SERVICE_DIR="$HOME/Library/Application Support/drafts-mcp-bridge"');
     expect(script).toContain('SOURCE_LAUNCHER_PATH="$ROOT_DIR/scripts/drafts-mcp-bridge.sh"');
     expect(script).toContain('LAUNCHER_PATH="$SERVICE_DIR/drafts-mcp-bridge.sh"');

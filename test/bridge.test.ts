@@ -5,9 +5,10 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { DEFAULT_TOKEN_FILE, loadConfig } from "../src/config.js";
+import { defaultTokenFile, loadConfig } from "../src/config.js";
 import { formatAddressForUrl, startBridge, type BridgeRuntime } from "../src/server.js";
 import { connectUpstream, type UpstreamConnection } from "../src/upstream.js";
+import { BRIDGE_VERSION } from "../src/version.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fakeUpstreamPath = path.join(__dirname, "fixtures", "fake-upstream.mjs");
@@ -34,10 +35,11 @@ describe("config", () => {
       loadConfig(
         {
           DRAFTS_MCP_TOKEN: "",
+          XDG_CONFIG_HOME: tempDir,
         },
         { cwd: tempDir },
       ),
-    ).toThrow(/DRAFTS_MCP_TOKEN, DRAFTS_MCP_TOKEN_FILE, or \.secrets/);
+    ).toThrow(/A bearer token is required/);
   });
 
   test("defaults remote access to read-only mode", async () => {
@@ -45,6 +47,7 @@ describe("config", () => {
     const config = loadConfig(
       {
         DRAFTS_MCP_TOKEN: "test-token",
+        XDG_CONFIG_HOME: tempDir,
       },
       { cwd: tempDir },
     );
@@ -75,16 +78,33 @@ describe("config", () => {
 
   test("loads bearer token from the default private token file without .env", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "drafts-bridge-"));
-    const tokenPath = path.join(tempDir, DEFAULT_TOKEN_FILE);
-    await mkdir(path.dirname(tokenPath));
+    const tokenPath = defaultTokenFile({ XDG_CONFIG_HOME: tempDir });
+    await mkdir(path.dirname(tokenPath), { mode: 0o700 });
     await writeFile(tokenPath, "default-file-token\n", { mode: 0o600 });
 
-    const config = loadConfig({}, { cwd: tempDir });
+    const config = loadConfig({ XDG_CONFIG_HOME: tempDir }, { cwd: tmpdir() });
 
     expect(config.token).toBe("default-file-token");
     expect(config.host).toBe("127.0.0.1");
     expect(config.port).toBe(3060);
     expect(config.readOnly).toBe(true);
+  });
+
+  test("local .env overrides user config, and process env overrides both", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "drafts-bridge-"));
+    const configDir = path.join(tempDir, "config", "drafts-mcp-bridge");
+    await mkdir(configDir, { recursive: true, mode: 0o700 });
+    const configFile = path.join(configDir, "config.env");
+    await writeFile(configFile, "DRAFTS_MCP_PORT=4444\nDRAFTS_MCP_READ_ONLY=false\n", {
+      mode: 0o600,
+    });
+    await writeFile(path.join(tempDir, ".env"), "DRAFTS_MCP_PORT=5555\n");
+    const env = { XDG_CONFIG_HOME: path.dirname(configDir), DRAFTS_MCP_TOKEN: "test-token" };
+
+    expect(loadConfig(env, { cwd: tempDir })).toMatchObject({ port: 5555, readOnly: false });
+    expect(loadConfig({ ...env, DRAFTS_MCP_PORT: "6666" }, { cwd: tempDir }).port).toBe(6666);
+    await chmod(configFile, 0o644);
+    expect(() => loadConfig(env, { cwd: tempDir })).toThrow(/config.env must be a private/);
   });
 
   test("loads non-secret config from .env and bearer token from a private file", async () => {
@@ -179,6 +199,15 @@ describe("config", () => {
         DRAFTS_MCP_TOKEN_FILE: tokenPath,
       }),
     ).toThrow(/must not be group\/world readable/);
+  });
+
+  test("rejects a default token directory accessible to other users", async () => {
+    const configHome = await mkdtemp(path.join(tmpdir(), "drafts-config-"));
+    const tokenPath = defaultTokenFile({ XDG_CONFIG_HOME: configHome });
+    await mkdir(path.dirname(tokenPath));
+    await chmod(path.dirname(tokenPath), 0o755);
+    await writeFile(tokenPath, "private-token\n", { mode: 0o600 });
+    expect(() => loadConfig({ XDG_CONFIG_HOME: configHome })).toThrow(/private directory/);
   });
 });
 
@@ -280,6 +309,10 @@ describe("bridge server", () => {
     });
 
     await client.connect(transport);
+    expect(client.getServerVersion()).toEqual({
+      name: "drafts-mcp-bridge",
+      version: BRIDGE_VERSION,
+    });
     const tools = await client.listTools();
     await client.close();
 
