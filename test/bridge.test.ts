@@ -8,6 +8,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { defaultTokenFile, loadConfig } from "../src/config.js";
 import { formatAddressForUrl, startBridge, type BridgeRuntime } from "../src/server.js";
 import { connectUpstream, type UpstreamConnection } from "../src/upstream.js";
+import { BRIDGE_VERSION } from "../src/version.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fakeUpstreamPath = path.join(__dirname, "fixtures", "fake-upstream.mjs");
@@ -290,6 +291,10 @@ describe("bridge server", () => {
     });
 
     await client.connect(transport);
+    expect(client.getServerVersion()).toEqual({
+      name: "drafts-mcp-bridge",
+      version: BRIDGE_VERSION,
+    });
     const tools = await client.listTools();
     await client.close();
 

@@ -1,5 +1,15 @@
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +20,7 @@ const require = createRequire(import.meta.url);
 const output = path.join(root, "release", "drafts-mcp-bridge");
 const upstreamPackage = require.resolve("@agiletortoise/drafts-mcp-server/package.json");
 const upstream = JSON.parse(readFileSync(upstreamPackage, "utf8"));
+const bridge = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 
 // This directory contains generated release files only, never runtime secrets.
 rmSync(output, { recursive: true, force: true });
@@ -36,6 +47,24 @@ const result = await build({
   legalComments: "eof",
   metafile: true,
 });
+
+const hash = createHash("sha256").update(bridge.version);
+for (const filename of readdirSync(path.join(output, "dist"))
+  .filter((name) => name.endsWith(".mjs"))
+  .sort()) {
+  hash.update(filename).update(readFileSync(path.join(output, "dist", filename)));
+}
+for (const directory of ["scripts", "launchd"]) {
+  for (const filename of readdirSync(path.join(root, directory)).sort()) {
+    const file = path.join(root, directory, filename);
+    if (file === fileURLToPath(import.meta.url) || !statSync(file).isFile()) continue;
+    hash.update(`${directory}/${filename}`).update(readFileSync(file));
+  }
+}
+writeFileSync(
+  path.join(output, "package.json"),
+  `${JSON.stringify({ name: bridge.name, version: bridge.version, buildId: hash.digest("hex").slice(0, 12) }, null, 2)}\n`,
+);
 
 // Keep licenses for every dependency whose code is included in the bundles.
 const packages = new Set();

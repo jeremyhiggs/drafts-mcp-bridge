@@ -39,6 +39,11 @@ describe("standalone release", () => {
       ]);
       const releaseRoot = path.join(tempDir, "drafts-mcp-bridge");
       await expect(access(path.join(releaseRoot, "node_modules"))).rejects.toThrow();
+      const releaseManifest = JSON.parse(
+        await readFile(path.join(releaseRoot, "package.json"), "utf8"),
+      ) as { version: string; buildId: string };
+      const releaseVersion = `${releaseManifest.version}+${releaseManifest.buildId}`;
+      expect(releaseManifest.buildId).toMatch(/^[a-f0-9]{12}$/);
 
       const binDir = path.join(tempDir, "bin");
       await mkdir(binDir);
@@ -61,6 +66,12 @@ describe("standalone release", () => {
         TAILSCALE_TEST_LOG: tailscaleLog,
         XDG_CONFIG_HOME: path.join(tempDir, "config & # <bridge>"),
       };
+      const versionResult = await execute(
+        path.join(releaseRoot, "scripts", scriptName),
+        ["--version"],
+        { cwd: tempDir, env },
+      );
+      expect(versionResult.stdout.trim()).toBe(releaseVersion);
       await execute(path.join(releaseRoot, "scripts", "generate-token.sh"), [], {
         cwd: tempDir,
         env,
@@ -87,6 +98,10 @@ describe("standalone release", () => {
             requestInit: { headers: { authorization: `Bearer ${token}` } },
           }),
         );
+        expect(client.getServerVersion()).toEqual({
+          name: "drafts-mcp-bridge",
+          version: releaseVersion,
+        });
         const tools = await client.listTools();
         expect(tools.tools.map((tool) => tool.name)).toContain("drafts_get_current");
         expect(tools.tools.map((tool) => tool.name)).not.toContain("drafts_create_draft");
@@ -137,6 +152,17 @@ describe("standalone release", () => {
 });
 
 describe("packaged bridge integration", () => {
+  test("reports the source version without requiring a token", async () => {
+    const manifest = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8")) as {
+      version: string;
+    };
+    const { stdout } = await execute("pnpm", ["start", "--version"], {
+      cwd: repoRoot,
+      env: { ...withoutDraftsEnv(process.env), DRAFTS_MCP_TOKEN: "" },
+    });
+    expect(stdout.trim()).toBe(manifest.version);
+  }, 30_000);
+
   test("starts via pnpm start and serves MCP over authenticated HTTP", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "drafts-bridge-integration-"));
     const tokenPath = path.join(tempDir, ".secrets", "token");

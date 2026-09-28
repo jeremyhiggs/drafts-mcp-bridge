@@ -99,6 +99,21 @@ contains no `.env` or tokens. You can install the release as a LaunchAgent with
 Rotate a release token with `./scripts/generate-token.sh --force`.
 Bundled dependency licenses are included in `THIRD_PARTY_NOTICES.txt`.
 
+Check an extracted build without starting the server:
+
+```sh
+./scripts/run-server.sh --version
+```
+
+From source, use `pnpm start --version`.
+
+The startup log and authenticated MCP initialization response report the same
+version. Standalone builds append a 12-character fingerprint of their bundled
+code and runtime scripts to the package version, such as `0.1.0+1a2b3c4d5e6f`. Compare
+that full value with a candidate build to see whether the running code differs.
+Source runs report the package version without a fingerprint; source scripts
+rebuild before starting.
+
 Rebuild the release after changing source code. Source checkout commands still
 compile before starting; release scripts execute the bundled `.mjs` files.
 

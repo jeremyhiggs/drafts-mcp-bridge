@@ -7,8 +7,14 @@ import {
   TAILSCALE_SERVE_PATH,
 } from "./tailscale.js";
 import { connectUpstream } from "./upstream.js";
+import { BRIDGE_VERSION } from "./version.js";
 
 export async function runBridge(args: string[], tailscale = false): Promise<void> {
+  if (args.length === 1 && args[0] === "--version") {
+    console.log(BRIDGE_VERSION);
+    return;
+  }
+
   const config = loadConfig(process.env, parseRuntimeArgs(args));
   if (tailscale && config.host !== "127.0.0.1" && config.host !== "localhost") {
     throw new Error("Tailscale Serve mode requires DRAFTS_MCP_HOST=127.0.0.1.");
@@ -29,7 +35,7 @@ export async function runBridge(args: string[], tailscale = false): Promise<void
   }
 
   console.error(
-    `drafts-mcp-bridge listening on ${runtime.url.href} readOnly=${String(config.readOnly)} verbose=${String(config.verbose)} upstreamBin=${config.upstreamBinPath}`,
+    `drafts-mcp-bridge listening on ${runtime.url.href} version=${BRIDGE_VERSION} readOnly=${String(config.readOnly)} verbose=${String(config.verbose)} upstreamBin=${config.upstreamBinPath}`,
   );
 
   const bridge = runtime;

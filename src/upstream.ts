@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { BRIDGE_VERSION } from "./version.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const require = createRequire(import.meta.url);
@@ -57,7 +58,7 @@ export async function connectUpstream(
   const client = new Client(
     {
       name: "drafts-mcp-bridge-upstream-client",
-      version: "0.1.0",
+      version: BRIDGE_VERSION,
     },
     {
       capabilities: {},
