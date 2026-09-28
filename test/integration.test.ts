@@ -8,6 +8,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rm,
   stat,
   symlink,
   writeFile,
@@ -122,7 +123,7 @@ describe("standalone release", () => {
       expect((await stat(path.dirname(tokenPath))).mode & 0o777).toBe(0o700);
       await writeFile(
         path.join(releaseRoot, ".env"),
-        `XDG_CONFIG_HOME=${JSON.stringify(env.XDG_CONFIG_HOME)}\nDRAFTS_MCP_PORT=0\nDRAFTS_MCP_VERBOSE=true\n`,
+        `XDG_CONFIG_HOME=${JSON.stringify(env.XDG_CONFIG_HOME)}\nDRAFTS_MCP_PORT=0\nDRAFTS_MCP_VERBOSE=true\nDRAFTS_MCP_TAILSCALE_SERVE=true\n`,
       );
 
       bridgeProcess = spawn(path.join(releaseRoot, "scripts", scriptName), [], {
@@ -156,10 +157,14 @@ describe("standalone release", () => {
       await stopProcess(bridgeProcess);
       expect(bridgeProcess.exitCode).toBe(0);
       bridgeProcess = undefined;
+      if (scriptName === "run-server.sh") {
+        await expect(access(tailscaleLog)).rejects.toThrow();
+      }
       if (scriptName === "run-tailscale.sh") {
         expect(await readFile(tailscaleLog, "utf8")).toContain(
           `serve --bg --set-path /drafts-mcp ${bridgeUrl.href}`,
         );
+        await rm(path.join(binDir, "tailscale"));
         await writeFile(
           path.join(binDir, "launchctl"),
           '#!/bin/sh\ncase "$1" in\n  print) if [ -f "$LAUNCHCTL_TEST_STATE" ]; then printf "state = running\\n"; else exit 1; fi ;;\n  bootout) rm -f "$LAUNCHCTL_TEST_STATE" ;;\n  bootstrap) touch "$LAUNCHCTL_TEST_STATE" ;;\nesac\n',
@@ -212,6 +217,16 @@ describe("standalone release", () => {
           `<string>${env.XDG_CONFIG_HOME.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</string>`,
         );
         expect(plist).not.toContain(token);
+        await writeFile(configFile, "DRAFTS_MCP_TAILSCALE_SERVE=true\n", { mode: 0o600 });
+        await expect(
+          execute(path.join(releaseRoot, "scripts", "install-launch-agent.sh"), [], {
+            env: installEnv,
+          }),
+        ).rejects.toThrow(/Missing required command: tailscale/);
+        expect(await readdir(releasesDir)).toEqual(secondRelease);
+        await writeFile(configFile, "DRAFTS_MCP_PORT=0\nDRAFTS_MCP_VERBOSE=true\n", {
+          mode: 0o600,
+        });
         await chmod(tokenPath, 0o644);
         await expect(
           execute(path.join(releaseRoot, "scripts", "install-launch-agent.sh"), [], {

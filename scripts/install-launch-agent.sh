@@ -8,11 +8,11 @@ if [ "$#" -gt 1 ]; then
   echo "Usage: $0 [release-folder]" >&2
   exit 1
 fi
-if [ ! -f "$ROOT_DIR/dist/tailscale-start.mjs" ]; then
+if [ ! -f "$ROOT_DIR/dist/index.mjs" ]; then
   ROOT_DIR="$ROOT_DIR/release/drafts-mcp-bridge"
 fi
 ROOT_DIR="${1:-$ROOT_DIR}"
-if [ ! -f "$ROOT_DIR/dist/tailscale-start.mjs" ] || [ ! -f "$ROOT_DIR/dist/config.mjs" ]; then
+if [ ! -f "$ROOT_DIR/dist/index.mjs" ] || [ ! -f "$ROOT_DIR/dist/config.mjs" ]; then
   echo "Missing release folder. Run pnpm release first, or pass a release-folder path." >&2
   exit 1
 fi
@@ -88,7 +88,6 @@ bootstrap_launch_agent() {
 }
 
 require_command node
-require_command tailscale
 require_command launchctl
 require_command plutil
 
@@ -99,9 +98,8 @@ if [ "$NODE_MAJOR" -lt 24 ]; then
 fi
 
 NODE_PATH="$(command -v node)"
-TAILSCALE_PATH="$(command -v tailscale)"
 LAUNCHER_PATH="$SERVICE_DIR/drafts-mcp-bridge.sh"
-SERVICE_PATH="$(dirname "$NODE_PATH"):$(dirname "$TAILSCALE_PATH"):$PATH"
+SERVICE_PATH="$(dirname "$NODE_PATH"):$PATH"
 
 RELEASE_VERSION="$(node -e '
 const pkg = require(process.argv[1]);
@@ -134,11 +132,20 @@ CONFIG_MODULE="$ROOT_DIR/dist/config.mjs"
 CONFIG_HOME="$(node --input-type=module - "$CONFIG_MODULE" <<'NODE'
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
-const { defaultTokenFile, loadConfig, loadEffectiveEnv } = await import(pathToFileURL(process.argv[2]).href);
-loadConfig();
-console.log(dirname(dirname(defaultTokenFile(loadEffectiveEnv()))));
+const { defaultTokenFile } = await import(pathToFileURL(process.argv[2]).href);
+console.log(dirname(dirname(defaultTokenFile())));
 NODE
 )"
+cd "$SERVICE_DIR"
+TAILSCALE_SERVE="$(env -i HOME="$HOME" XDG_CONFIG_HOME="$CONFIG_HOME" PATH="$SERVICE_PATH" node --input-type=module - "$CONFIG_MODULE" <<'NODE'
+import { pathToFileURL } from "node:url";
+const { loadConfig } = await import(pathToFileURL(process.argv[2]).href);
+console.log(loadConfig().tailscaleServe);
+NODE
+)"
+if [ "$TAILSCALE_SERVE" = "true" ]; then
+  require_command tailscale
+fi
 
 mkdir -p "$HOME/Library/LaunchAgents" "$SERVICE_DIR" "$LOG_DIR"
 NEW_RELEASE=""

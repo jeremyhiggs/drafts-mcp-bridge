@@ -9,13 +9,14 @@ import {
 import { connectUpstream } from "./upstream.js";
 import { BRIDGE_VERSION } from "./version.js";
 
-export async function runBridge(args: string[], tailscale = false): Promise<void> {
+export async function runBridge(args: string[]): Promise<void> {
   if (args.length === 1 && args[0] === "--version") {
     console.log(BRIDGE_VERSION);
     return;
   }
 
   const config = loadConfig(process.env, parseRuntimeArgs(args));
+  const tailscale = config.tailscaleServe;
   if (tailscale && config.host !== "127.0.0.1" && config.host !== "localhost") {
     throw new Error("Tailscale Serve mode requires DRAFTS_MCP_HOST=127.0.0.1.");
   }

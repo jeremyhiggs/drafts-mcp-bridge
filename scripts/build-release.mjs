@@ -31,7 +31,6 @@ const result = await build({
   entryPoints: {
     index: "src/index.ts",
     config: "src/config.ts",
-    "tailscale-start": "src/tailscale-start.ts",
     "generate-token": "src/generate-token.ts",
     upstream: path.resolve(path.dirname(upstreamPackage), upstream.bin["drafts-mcp-server"]),
   },
