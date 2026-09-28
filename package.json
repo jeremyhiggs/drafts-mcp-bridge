@@ -10,6 +10,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "build:release": "node scripts/build-release.mjs",
+    "release": "pnpm run build && pnpm run build:release",
     "dev": "tsx src/index.ts",
     "format": "biome format --write .",
     "format:check": "biome format .",

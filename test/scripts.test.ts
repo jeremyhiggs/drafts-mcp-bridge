@@ -61,6 +61,8 @@ describe("runner scripts", () => {
     );
 
     expect(script).toContain('LABEL="local.drafts-mcp-bridge"');
+    expect(script).toContain('ROOT_DIR="$ROOT_DIR/release/drafts-mcp-bridge"');
+    expect(script).toContain("Run pnpm release first");
     expect(script).toContain('SERVICE_DIR="$HOME/Library/Application Support/drafts-mcp-bridge"');
     expect(script).toContain('SOURCE_LAUNCHER_PATH="$ROOT_DIR/scripts/drafts-mcp-bridge.sh"');
     expect(script).toContain('LAUNCHER_PATH="$SERVICE_DIR/drafts-mcp-bridge.sh"');

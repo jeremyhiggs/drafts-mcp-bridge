@@ -75,10 +75,11 @@ Build a portable archive from this checkout:
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm build:release
+pnpm release
 ```
 
-This produces `release/drafts-mcp-bridge.tar.gz`. It bundles the bridge,
+This produces `release/drafts-mcp-bridge/` and
+`release/drafts-mcp-bridge.tar.gz`. The release bundles the bridge,
 the pinned upstream server, and their JavaScript dependencies. Copy and extract
 the archive on your Mac; no `node_modules`, pnpm, or build step is needed there.
 Node.js 24+ and Drafts are still required, plus Tailscale when using Serve.
@@ -92,10 +93,14 @@ cd drafts-mcp-bridge
 ./scripts/run-tailscale.sh
 ```
 
-The optional `.env` lives in the extracted directory. The token lives in the
+The optional `.env` lives in the release directory and survives rebuilds, but
+is never included in the archive. The token lives in the
 shared user config directory, outside the checkout and release. The archive
-contains no `.env` or tokens. You can install the release as a LaunchAgent with
-`./scripts/install-launch-agent.sh`; keep its directory in place afterward.
+contains no `.env` or tokens. From the checkout, `pnpm launchd:install` installs
+the built release; it fails if you have not run `pnpm release`. From an extracted
+archive, run `./scripts/install-launch-agent.sh`, or pass its folder to the
+checkout installer. The installer copies the release into Application Support,
+then removes older installed versions once the new agent is running.
 Rotate a release token with `./scripts/generate-token.sh --force`.
 Bundled dependency licenses are included in `THIRD_PARTY_NOTICES.txt`.
 
@@ -221,6 +226,7 @@ Use a macOS LaunchAgent, not a LaunchDaemon, so Drafts automation runs in the
 logged-in user's GUI session.
 
 ```sh
+pnpm release
 pnpm launchd:install
 ```
 
@@ -230,10 +236,17 @@ This renders `launchd/local.drafts-mcp-bridge.plist.template` to:
 ~/Library/LaunchAgents/local.drafts-mcp-bridge.plist
 ```
 
-The service runs an installed copy of `scripts/drafts-mcp-bridge.sh`, so
+The installer selects `release/drafts-mcp-bridge/` from the checkout, or the
+release containing the installer script. It copies the selected release into
+`~/Library/Application Support/drafts-mcp-bridge/releases/`, validates its
+configuration, and starts the agent from that copy. Once the new agent is
+running, it removes older installed releases. The service runs an installed
+copy of `scripts/drafts-mcp-bridge.sh`, so
 macOS Login Items show a named bridge entry instead of `pnpm`. The installed
 launcher lives outside `~/Documents` to avoid macOS background-item privacy
-restrictions, keeps the bridge alive, and writes logs to:
+restrictions. Startup runs bundled JavaScript without pnpm or `node_modules`.
+You can move or remove the source release after installation. The agent keeps
+the bridge alive and writes logs to:
 
 ```text
 ~/Library/Logs/drafts-mcp-bridge/

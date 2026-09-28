@@ -4,10 +4,24 @@ set -eu
 LABEL="local.drafts-mcp-bridge"
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+if [ "$#" -gt 1 ]; then
+  echo "Usage: $0 [release-folder]" >&2
+  exit 1
+fi
+if [ ! -f "$ROOT_DIR/dist/tailscale-start.mjs" ]; then
+  ROOT_DIR="$ROOT_DIR/release/drafts-mcp-bridge"
+fi
+ROOT_DIR="${1:-$ROOT_DIR}"
+if [ ! -f "$ROOT_DIR/dist/tailscale-start.mjs" ] || [ ! -f "$ROOT_DIR/dist/config.mjs" ]; then
+  echo "Missing release folder. Run pnpm release first, or pass a release-folder path." >&2
+  exit 1
+fi
+ROOT_DIR="$(CDPATH= cd -- "$ROOT_DIR" && pwd)"
 cd "$ROOT_DIR"
 TEMPLATE="$ROOT_DIR/launchd/$LABEL.plist.template"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 SERVICE_DIR="$HOME/Library/Application Support/drafts-mcp-bridge"
+RELEASES_DIR="$SERVICE_DIR/releases"
 LOG_DIR="$HOME/Library/Logs/drafts-mcp-bridge"
 STDOUT_LOG="$LOG_DIR/out.log"
 STDERR_LOG="$LOG_DIR/err.log"
@@ -73,9 +87,6 @@ bootstrap_launch_agent() {
   done
 }
 
-if [ ! -f "$ROOT_DIR/dist/tailscale-start.mjs" ]; then
-  require_command pnpm
-fi
 require_command node
 require_command tailscale
 require_command launchctl
@@ -92,11 +103,39 @@ TAILSCALE_PATH="$(command -v tailscale)"
 LAUNCHER_PATH="$SERVICE_DIR/drafts-mcp-bridge.sh"
 SERVICE_PATH="$(dirname "$NODE_PATH"):$(dirname "$TAILSCALE_PATH"):$PATH"
 
-CONFIG_MODULE="$ROOT_DIR/dist/config.mjs"
-if [ ! -f "$ROOT_DIR/dist/tailscale-start.mjs" ]; then
-  pnpm --dir "$ROOT_DIR" run build
-  CONFIG_MODULE="$ROOT_DIR/dist/config.js"
+RELEASE_VERSION="$(node -e '
+const pkg = require(process.argv[1]);
+const version = `${pkg.version}+${pkg.buildId}`;
+if (!pkg.buildId || !/^[A-Za-z0-9.+_-]+$/.test(version)) process.exit(1);
+process.stdout.write(version);
+' "$ROOT_DIR/package.json")"
+mkdir -p "$RELEASES_DIR"
+LOCK_DIR="$SERVICE_DIR/.install.lock"
+if ! mkdir "$LOCK_DIR"; then
+  echo "Another install is running, or $LOCK_DIR is stale." >&2
+  exit 1
 fi
+NEW_RELEASE=""
+cleanup() {
+  if [ -n "$NEW_RELEASE" ]; then rm -rf "$NEW_RELEASE"; fi
+  rmdir "$LOCK_DIR"
+}
+trap cleanup EXIT
+SOURCE_ROOT="$ROOT_DIR"
+ROOT_DIR="$(mktemp -d "$RELEASES_DIR/$RELEASE_VERSION.XXXXXX")"
+NEW_RELEASE="$ROOT_DIR"
+cp -R "$SOURCE_ROOT/." "$ROOT_DIR/"
+cd "$ROOT_DIR"
+if [ -e "$ROOT_DIR/.env" ] || [ -L "$ROOT_DIR/.env" ]; then
+  if [ ! -f "$ROOT_DIR/.env" ] || [ -L "$ROOT_DIR/.env" ]; then
+    echo "Release .env must be a regular file." >&2
+    exit 1
+  fi
+  chmod 600 "$ROOT_DIR/.env"
+fi
+SOURCE_LAUNCHER_PATH="$ROOT_DIR/scripts/drafts-mcp-bridge.sh"
+CONFIG_MODULE="$ROOT_DIR/dist/config.mjs"
+
 CONFIG_HOME="$(node --input-type=module - "$CONFIG_MODULE" <<'NODE'
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -107,6 +146,7 @@ NODE
 )"
 
 mkdir -p "$HOME/Library/LaunchAgents" "$SERVICE_DIR" "$LOG_DIR"
+NEW_RELEASE=""
 cp "$SOURCE_LAUNCHER_PATH" "$LAUNCHER_PATH"
 chmod 755 "$LAUNCHER_PATH"
 render_template > "$PLIST"
@@ -117,6 +157,21 @@ wait_for_service_removal
 bootstrap_launch_agent
 launchctl enable "$GUI_DOMAIN/$LABEL"
 launchctl kickstart -k "$GUI_DOMAIN/$LABEL"
+attempts=0
+until launchctl print "$GUI_DOMAIN/$LABEL" | grep -q 'state = running'; do
+  attempts=$((attempts + 1))
+  if [ "$attempts" -ge 10 ]; then
+    echo "Timed out waiting for $LABEL to run; previous releases were kept." >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+for old_release in "$RELEASES_DIR"/*; do
+  if [ -d "$old_release" ] && [ "$old_release" != "$ROOT_DIR" ]; then
+    rm -rf "$old_release"
+  fi
+done
 
 echo "Installed and started $LABEL"
 echo "Plist: $PLIST"

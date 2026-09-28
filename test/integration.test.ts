@@ -1,6 +1,18 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
-import { access, chmod, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -25,6 +37,44 @@ afterEach(async () => {
 describe("standalone release", () => {
   beforeAll(async () => {
     await execute("pnpm", ["build:release"], { cwd: repoRoot });
+  }, 30_000);
+
+  test("rebuild preserves local config without packing it into the archive", async () => {
+    const scratch = await mkdtemp(path.join(tmpdir(), "drafts release build "));
+    for (const name of ["package.json", "README.md", ".env.example", "src", "scripts", "launchd"]) {
+      await cp(path.join(repoRoot, name), path.join(scratch, name), { recursive: true });
+    }
+    await symlink(path.join(repoRoot, "node_modules"), path.join(scratch, "node_modules"), "dir");
+    const releaseRoot = path.join(scratch, "release", "drafts-mcp-bridge");
+    await mkdir(releaseRoot, { recursive: true });
+    await writeFile(path.join(releaseRoot, ".env"), "DRAFTS_MCP_READ_ONLY=false\n", {
+      mode: 0o600,
+    });
+
+    await execute(process.execPath, ["scripts/build-release.mjs"], { cwd: scratch });
+
+    expect(await readFile(path.join(releaseRoot, ".env"), "utf8")).toBe(
+      "DRAFTS_MCP_READ_ONLY=false\n",
+    );
+    expect((await stat(path.join(releaseRoot, ".env"))).mode & 0o777).toBe(0o600);
+    const archive = await execute("tar", [
+      "-tzf",
+      path.join(scratch, "release", "drafts-mcp-bridge.tar.gz"),
+    ]);
+    expect(archive.stdout.split("\n")).not.toContain("drafts-mcp-bridge/.env");
+
+    // Simulate an interruption after the old release was moved aside.
+    await rm(releaseRoot, { recursive: true });
+    await execute(process.execPath, ["scripts/build-release.mjs"], { cwd: scratch });
+    expect(await readFile(path.join(releaseRoot, ".env"), "utf8")).toBe(
+      "DRAFTS_MCP_READ_ONLY=false\n",
+    );
+    const lockDir = path.join(scratch, "release", ".build.lock");
+    await mkdir(lockDir);
+    await expect(
+      execute(process.execPath, ["scripts/build-release.mjs"], { cwd: scratch }),
+    ).rejects.toThrow(/Another release build is running/);
+    await rm(lockDir, { recursive: true });
   }, 30_000);
 
   test.each(["run-server.sh", "run-tailscale.sh"])(
@@ -64,6 +114,7 @@ describe("standalone release", () => {
         HOME: path.join(tempDir, "home"),
         PATH: `${binDir}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
         TAILSCALE_TEST_LOG: tailscaleLog,
+        LAUNCHCTL_TEST_STATE: path.join(tempDir, "launchctl-state"),
         XDG_CONFIG_HOME: path.join(tempDir, "config & # <bridge>"),
       };
       const versionResult = await execute(
@@ -122,19 +173,47 @@ describe("standalone release", () => {
         );
         await writeFile(
           path.join(binDir, "launchctl"),
-          '#!/bin/sh\nif [ "$1" = "print" ]; then exit 1; fi\n',
+          '#!/bin/sh\ncase "$1" in\n  print) if [ -f "$LAUNCHCTL_TEST_STATE" ]; then printf "state = running\\n"; else exit 1; fi ;;\n  bootout) rm -f "$LAUNCHCTL_TEST_STATE" ;;\n  bootstrap) touch "$LAUNCHCTL_TEST_STATE" ;;\nesac\n',
           { mode: 0o755 },
         );
         await writeFile(path.join(binDir, "plutil"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+        const releasesDir = path.join(
+          env.HOME,
+          "Library",
+          "Application Support",
+          "drafts-mcp-bridge",
+          "releases",
+        );
+        await mkdir(path.join(releasesDir, "old-release"), { recursive: true });
+        await execute(path.join(repoRoot, "scripts", "install-launch-agent.sh"), [], { env });
+        const plistPath = path.join(
+          env.HOME,
+          "Library",
+          "LaunchAgents",
+          "local.drafts-mcp-bridge.plist",
+        );
+        const firstRelease = await readdir(releasesDir);
+        expect(firstRelease).toHaveLength(1);
+        expect(firstRelease[0].startsWith(`${releaseVersion}.`)).toBe(true);
+        const firstInstalledRoot = path.join(releasesDir, firstRelease[0]);
+        expect(await readFile(plistPath, "utf8")).toContain(
+          `<string>${firstInstalledRoot}</string>`,
+        );
+        await expect(access(path.join(firstInstalledRoot, "node_modules"))).rejects.toThrow();
         const installEnv: NodeJS.ProcessEnv = { ...env };
         delete installEnv.XDG_CONFIG_HOME;
         await execute(path.join(releaseRoot, "scripts", "install-launch-agent.sh"), [], {
           env: installEnv,
         });
-        const plist = await readFile(
-          path.join(env.HOME, "Library", "LaunchAgents", "local.drafts-mcp-bridge.plist"),
-          "utf8",
+        const plist = await readFile(plistPath, "utf8");
+        const secondRelease = await readdir(releasesDir);
+        expect(secondRelease).toHaveLength(1);
+        expect(secondRelease[0]).not.toBe(firstRelease[0]);
+        const installedRoot = path.join(releasesDir, secondRelease[0]);
+        expect(plist).toContain(
+          `<string>${installedRoot.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</string>`,
         );
+        expect((await stat(path.join(installedRoot, ".env"))).mode & 0o777).toBe(0o600);
         expect(plist).toContain(
           `<string>${env.XDG_CONFIG_HOME.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</string>`,
         );
@@ -145,6 +224,15 @@ describe("standalone release", () => {
             env: installEnv,
           }),
         ).rejects.toThrow(/must not be group\/world readable/);
+        expect(await readdir(releasesDir)).toEqual(secondRelease);
+        const lockDir = path.join(path.dirname(releasesDir), ".install.lock");
+        await mkdir(lockDir);
+        await expect(
+          execute(path.join(releaseRoot, "scripts", "install-launch-agent.sh"), [], {
+            env: installEnv,
+          }),
+        ).rejects.toThrow(/Another install is running/);
+        expect(await readdir(releasesDir)).toEqual(secondRelease);
       }
     },
     30_000,
