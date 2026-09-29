@@ -5,10 +5,10 @@ allowBuilds:
   "esbuild@0.28.1 || 0.28.2": true
 overrides:
   "@hono/node-server@<2.0.10": 2.0.10
-  "fast-uri@>=3.0.0 <3.1.6": 3.1.6
+  "fast-uri@>=3.0.0 <3.1.7": 3.1.7
   "postcss@<8.5.23": 8.5.23
   "hono@<4.13.5": 4.13.5
-  "ip-address@<10.3.1": 10.3.1
+  "ip-address@<10.5.1": 10.5.1
   "qs@<6.16.0": 6.16.0
 preferFrozenLockfile: true
 strictDepBuilds: true
