@@ -1,6 +1,9 @@
 blockExoticSubdeps: true
 engineStrict: true
 minimumReleaseAge: 10080
+minimumReleaseAgeExclude:
+  # Security fix for GHSA-68fv-2mgg-jv7q; remove after 2026-10-07 14:08 UTC.
+  - "source-map-js@1.2.2"
 allowBuilds:
   "esbuild@0.28.1 || 0.28.2": true
 overrides:
@@ -9,6 +12,8 @@ overrides:
   "postcss@<8.5.23": 8.5.23
   "hono@<4.13.7": 4.13.7
   "ip-address@>=10.0.0 <10.7.1": 10.7.1
+  "proxy-addr@>=1.1.0 <2.0.8": 2.0.8
   "qs@<6.16.0": 6.16.0
+  "source-map-js@>=1.0.0 <1.2.2": 1.2.2
 preferFrozenLockfile: true
 strictDepBuilds: true
