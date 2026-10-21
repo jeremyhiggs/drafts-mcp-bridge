@@ -5,15 +5,16 @@ minimumReleaseAgeExclude:
   # Security fix for GHSA-68fv-2mgg-jv7q; remove after 2026-10-07 14:08 UTC.
   - "source-map-js@1.2.2"
 allowBuilds:
-  "esbuild@0.28.1 || 0.28.2": true
+  "esbuild@0.28.2": true
 overrides:
   "@hono/node-server@<2.0.10": 2.0.10
   "fast-uri@>=3.0.0 <3.1.8": 3.1.8
   "postcss@<8.5.23": 8.5.23
-  "hono@<4.13.7": 4.13.7
+  "hono@<4.13.11": 4.13.11
   "ip-address@>=10.0.0 <10.7.1": 10.7.1
   "proxy-addr@>=1.1.0 <2.0.8": 2.0.8
   "qs@<6.16.0": 6.16.0
   "source-map-js@>=1.0.0 <1.2.2": 1.2.2
+  "vite@>=7.0.0 <7.3.7": 7.3.7
 preferFrozenLockfile: true
 strictDepBuilds: true
