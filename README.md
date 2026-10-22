@@ -6,7 +6,7 @@ Run the [Drafts MCP server](https://github.com/agiletortoise/drafts-mcp-server) 
 
 ## First-time setup: background service
 
-You need macOS with Drafts installed and automation access allowed, Node.js 24+, and pnpm 11.28.0 to build. Tailscale is needed only if you enable Serve. Run these commands from this checkout:
+You need macOS with Drafts installed and automation access allowed, Node.js 24+, and pnpm 11.28.7 to build. Tailscale is needed only if you enable Serve. Run these commands from this checkout:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -146,7 +146,7 @@ Rotate the token with `pnpm token:generate -- --force`, then update your MCP cli
 
 ## Development
 
-The project pins pnpm 11.28.0. CI checks formatting, lint, types, tests, builds, and runtime plus development dependency advisories on pull requests and pushes to `main`. The dependency audit also runs daily at 00:00 UTC and fails on moderate or higher severity advisories.
+The project pins pnpm 11.28.7. CI checks formatting, lint, types, tests, builds, and runtime plus development dependency advisories on pull requests and pushes to `main`. The dependency audit also runs daily at 00:00 UTC and fails on moderate or higher severity advisories.
 
 ```sh
 pnpm install --frozen-lockfile
