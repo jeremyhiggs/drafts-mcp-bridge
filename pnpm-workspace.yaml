@@ -2,13 +2,16 @@ blockExoticSubdeps: true
 engineStrict: true
 minimumReleaseAge: 10080
 minimumReleaseAgeExclude:
-  # Security fix for GHSA-68fv-2mgg-jv7q; remove after 2026-10-07 14:08 UTC.
-  - "source-map-js@1.2.2"
+  # Security fix for GHSA-27r3-jxmh-p828; remove after 2026-10-29 11:40 UTC.
+  - "body-parser@2.4.0"
+  # Security fixes for fast-uri advisories; remove after 2026-10-26 23:06 UTC.
+  - "fast-uri@3.1.9"
 allowBuilds:
   "esbuild@0.28.2": true
 overrides:
   "@hono/node-server@<2.0.10": 2.0.10
-  "fast-uri@>=3.0.0 <3.1.8": 3.1.8
+  "body-parser@>=2.0.0 <2.4.0": 2.4.0
+  "fast-uri@>=3.0.0 <3.1.9": 3.1.9
   "postcss@<8.5.23": 8.5.23
   "hono@<4.13.11": 4.13.11
   "ip-address@>=10.0.0 <10.7.4": 10.7.4
@@ -16,5 +19,6 @@ overrides:
   "qs@<6.16.0": 6.16.0
   "source-map-js@>=1.0.0 <1.2.2": 1.2.2
   "vite@>=7.0.0 <7.3.7": 7.3.7
+  "zod@>=4.0.0 <4.6.6": 4.6.6
 preferFrozenLockfile: true
 strictDepBuilds: true
