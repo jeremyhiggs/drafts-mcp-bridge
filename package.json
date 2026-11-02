@@ -1,6 +1,6 @@
 {
   "name": "drafts-mcp-bridge",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "description": "Authenticated Streamable HTTP bridge for the @agiletortoise/drafts-mcp-server stdio MCP server.",
@@ -8,16 +8,18 @@
     "drafts-mcp-bridge": "./dist/index.js"
   },
   "scripts": {
+    "bridge:test": "scripts/check-bridge.sh",
     "build": "tsc -p tsconfig.build.json",
     "build:release": "node scripts/build-release.mjs",
-    "release": "pnpm run build && pnpm run build:release",
     "dev": "tsx src/index.ts",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "launchd:install": "scripts/install-launch-agent.sh",
     "launchd:logs": "scripts/tail-launch-agent-logs.sh",
+    "launchd:restart": "scripts/restart-launch-agent.sh",
     "launchd:uninstall": "scripts/uninstall-launch-agent.sh",
     "lint": "biome lint .",
+    "release": "pnpm run build && pnpm run build:release",
     "start": "scripts/run-server.sh",
     "start:tailscale": "scripts/run-tailscale.sh",
     "test": "vitest run",
