@@ -154,6 +154,14 @@ describe("standalone release", () => {
       } finally {
         await client.close();
       }
+      const check = await execute(
+        path.join(releaseRoot, "scripts/check-bridge.sh"),
+        [bridgeUrl.href],
+        { env, cwd: tempDir },
+      );
+      expect(check.stdout).toContain(releaseVersion);
+      expect(check.stdout).toContain("PASS: drafts_list_workspaces");
+      expect(check.stdout).not.toContain("Release workspace");
       await stopProcess(bridgeProcess);
       expect(bridgeProcess.exitCode).toBe(0);
       bridgeProcess = undefined;
