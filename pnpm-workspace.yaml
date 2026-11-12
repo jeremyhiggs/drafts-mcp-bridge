@@ -1,11 +1,6 @@
 blockExoticSubdeps: true
 engineStrict: true
 minimumReleaseAge: 10080
-minimumReleaseAgeExclude:
-  # Security fix for GHSA-27r3-jxmh-p828; remove after 2026-10-29 11:40 UTC.
-  - "body-parser@2.4.0"
-  # Security fixes for fast-uri advisories; remove after 2026-10-26 23:06 UTC.
-  - "fast-uri@3.1.9"
 allowBuilds:
   "esbuild@0.28.2": true
 overrides:
@@ -22,3 +17,5 @@ overrides:
   "zod@>=4.0.0 <4.6.6": 4.6.6
 preferFrozenLockfile: true
 strictDepBuilds: true
+trustPolicy: no-downgrade
+trustLockfile: false

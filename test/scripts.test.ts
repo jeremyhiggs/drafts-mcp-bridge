@@ -84,9 +84,9 @@ describe("runner scripts", () => {
     const packageJson = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8")) as {
       engines?: { node?: string };
     };
-    const npmrc = await readFile(path.join(repoRoot, ".npmrc"), "utf8");
+    const workspace = await readFile(path.join(repoRoot, "pnpm-workspace.yaml"), "utf8");
 
     expect(packageJson.engines?.node).toBe(">=24.0.0");
-    expect(npmrc).toContain("engine-strict=true");
+    expect(workspace).toMatch(/^engineStrict: true$/m);
   });
 });
