@@ -1,6 +1,6 @@
 {
   "name": "drafts-mcp-bridge",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "description": "Authenticated Streamable HTTP bridge for the @agiletortoise/drafts-mcp-server stdio MCP server.",
@@ -42,5 +42,5 @@
   "engines": {
     "node": ">=24.0.0"
   },
-  "packageManager": "pnpm@11.28.9"
+  "packageManager": "pnpm@11.28.11"
 }
