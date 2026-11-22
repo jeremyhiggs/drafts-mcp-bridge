@@ -26,11 +26,6 @@ LOG_DIR="$HOME/Library/Logs/drafts-mcp-bridge"
 STDOUT_LOG="$LOG_DIR/out.log"
 STDERR_LOG="$LOG_DIR/err.log"
 GUI_DOMAIN="gui/$(id -u)"
-NODE_PATH=""
-TAILSCALE_PATH=""
-SOURCE_LAUNCHER_PATH="$ROOT_DIR/scripts/drafts-mcp-bridge.sh"
-LAUNCHER_PATH=""
-SERVICE_PATH=""
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -65,7 +60,18 @@ render_template() {
 
 wait_for_service_removal() {
   attempts=0
-  while launchctl print "$GUI_DOMAIN/$LABEL" >/dev/null 2>&1; do
+  while :; do
+    status=0
+    launchctl print "$GUI_DOMAIN/$LABEL" >/dev/null 2>&1 || status=$?
+    case "$status" in
+      0) ;;
+      # launchctl reports an absent job as No such process or Could not find specified service.
+      3|113) return 0 ;;
+      *)
+        echo "Could not confirm $LABEL was unloaded (launchctl print exited $status)." >&2
+        return 1
+        ;;
+    esac
     attempts=$((attempts + 1))
     if [ "$attempts" -ge 10 ]; then
       echo "Timed out waiting for $LABEL to stop." >&2
@@ -148,14 +154,19 @@ if [ "$TAILSCALE_SERVE" = "true" ]; then
 fi
 
 mkdir -p "$HOME/Library/LaunchAgents" "$SERVICE_DIR" "$LOG_DIR"
-NEW_RELEASE=""
-cp "$SOURCE_LAUNCHER_PATH" "$LAUNCHER_PATH"
-chmod 755 "$LAUNCHER_PATH"
-render_template > "$PLIST"
-plutil -lint "$PLIST" >/dev/null
+STAGED_LAUNCHER="$ROOT_DIR/${LAUNCHER_PATH##*/}"
+STAGED_PLIST="$ROOT_DIR/$LABEL.plist"
+cp "$SOURCE_LAUNCHER_PATH" "$STAGED_LAUNCHER"
+chmod 755 "$STAGED_LAUNCHER"
+render_template > "$STAGED_PLIST"
+plutil -lint "$STAGED_PLIST" >/dev/null
 
 launchctl bootout "$GUI_DOMAIN/$LABEL" >/dev/null 2>&1 || true
 wait_for_service_removal
+
+NEW_RELEASE=""
+mv -f "$STAGED_LAUNCHER" "$LAUNCHER_PATH"
+mv -f "$STAGED_PLIST" "$PLIST"
 bootstrap_launch_agent
 launchctl enable "$GUI_DOMAIN/$LABEL"
 launchctl kickstart -k "$GUI_DOMAIN/$LABEL"

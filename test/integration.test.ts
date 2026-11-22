@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { afterEach, beforeAll, describe, expect, test } from "vitest";
+import { afterEach, beforeAll, describe, expect, onTestFinished, test } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -71,6 +71,7 @@ describe("standalone release", () => {
     "%s runs with bundled upstream and no node_modules or pnpm",
     async (scriptName) => {
       const tempDir = await mkdtemp(path.join(tmpdir(), "drafts release "));
+      onTestFinished(() => rm(tempDir, { recursive: true, force: true }));
       await execute("tar", [
         "-xzf",
         path.join(repoRoot, "release", "drafts-mcp-bridge.tar.gz"),
@@ -175,7 +176,31 @@ describe("standalone release", () => {
         await rm(path.join(binDir, "tailscale"));
         await writeFile(
           path.join(binDir, "launchctl"),
-          '#!/bin/sh\ncase "$1" in\n  print) if [ -f "$LAUNCHCTL_TEST_STATE" ]; then printf "state = running\\n"; else exit 1; fi ;;\n  bootout) rm -f "$LAUNCHCTL_TEST_STATE" ;;\n  bootstrap) touch "$LAUNCHCTL_TEST_STATE" ;;\nesac\n',
+          `#!/bin/sh
+set -eu
+state="$LAUNCHCTL_TEST_STATE"
+case "$1" in
+  print)
+    [ -f "$state" ] || exit 113
+    status=$(cat "$state")
+    if [ "$status" = stopping ]; then
+      [ "\${LAUNCHCTL_TEST_PRINT_ERROR:-}" != 1 ] || exit 77
+      cp "$HOME/Library/LaunchAgents/local.drafts-mcp-bridge.plist" "$state.previous-plist"
+      cp "$HOME/Library/Application Support/drafts-mcp-bridge/drafts-mcp-bridge.sh" "$state.previous-launcher"
+      rm "$state"
+    fi
+    printf 'state = %s\\n' "$status"
+    ;;
+  bootout)
+    [ -f "$state" ] || exit 1
+    printf 'stopping\\n' > "$state"
+    ;;
+  bootstrap)
+    [ ! -f "$state" ] || exit 1
+    printf 'running\\n' > "$state"
+    ;;
+esac
+`,
           { mode: 0o755 },
         );
         await writeFile(path.join(binDir, "plutil"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
@@ -198,19 +223,34 @@ describe("standalone release", () => {
         expect(firstRelease).toHaveLength(1);
         expect(firstRelease[0].startsWith(`${releaseVersion}.`)).toBe(true);
         const firstInstalledRoot = path.join(releasesDir, firstRelease[0]);
-        expect(await readFile(plistPath, "utf8")).toContain(
-          `<string>${firstInstalledRoot}</string>`,
-        );
+        const firstPlist = await readFile(plistPath, "utf8");
+        expect(firstPlist).toContain(`<string>${firstInstalledRoot}</string>`);
         await expect(access(path.join(firstInstalledRoot, "node_modules"))).rejects.toThrow();
         await expect(access(path.join(firstInstalledRoot, ".env"))).rejects.toThrow();
-        const installEnv: NodeJS.ProcessEnv = { ...env };
+        const installedLauncher = path.join(path.dirname(releasesDir), "drafts-mcp-bridge.sh");
+        await writeFile(installedLauncher, "# old launcher\n");
         const configFile = path.join(env.XDG_CONFIG_HOME, "drafts-mcp-bridge", "config.env");
         await writeFile(configFile, "DRAFTS_MCP_PORT=0\nDRAFTS_MCP_VERBOSE=true\n", {
           mode: 0o600,
         });
-        await execute(path.join(releaseRoot, "scripts", "install-launch-agent.sh"), [], {
-          env: installEnv,
-        });
+        const installScript = path.join(releaseRoot, "scripts", "install-launch-agent.sh");
+        await expect(
+          execute(installScript, [], { env: { ...env, LAUNCHCTL_TEST_PRINT_ERROR: "1" } }),
+        ).rejects.toThrow(/Could not confirm .* was unloaded/);
+        expect(await readFile(plistPath, "utf8")).toBe(firstPlist);
+        expect(await readFile(installedLauncher, "utf8")).toBe("# old launcher\n");
+        expect(await readdir(releasesDir)).toEqual(firstRelease);
+
+        await execute(installScript, [], { env });
+        expect(await readFile(`${env.LAUNCHCTL_TEST_STATE}.previous-plist`, "utf8")).toBe(
+          firstPlist,
+        );
+        expect(await readFile(`${env.LAUNCHCTL_TEST_STATE}.previous-launcher`, "utf8")).toBe(
+          "# old launcher\n",
+        );
+        expect(await readFile(installedLauncher, "utf8")).toBe(
+          await readFile(path.join(releaseRoot, "scripts/drafts-mcp-bridge.sh"), "utf8"),
+        );
         const plist = await readFile(plistPath, "utf8");
         const secondRelease = await readdir(releasesDir);
         expect(secondRelease).toHaveLength(1);
@@ -226,29 +266,23 @@ describe("standalone release", () => {
         );
         expect(plist).not.toContain(token);
         await writeFile(configFile, "DRAFTS_MCP_TAILSCALE_SERVE=true\n", { mode: 0o600 });
-        await expect(
-          execute(path.join(releaseRoot, "scripts", "install-launch-agent.sh"), [], {
-            env: installEnv,
-          }),
-        ).rejects.toThrow(/Missing required command: tailscale/);
+        await expect(execute(installScript, [], { env })).rejects.toThrow(
+          /Missing required command: tailscale/,
+        );
         expect(await readdir(releasesDir)).toEqual(secondRelease);
         await writeFile(configFile, "DRAFTS_MCP_PORT=0\nDRAFTS_MCP_VERBOSE=true\n", {
           mode: 0o600,
         });
         await chmod(tokenPath, 0o644);
-        await expect(
-          execute(path.join(releaseRoot, "scripts", "install-launch-agent.sh"), [], {
-            env: installEnv,
-          }),
-        ).rejects.toThrow(/must not be group\/world readable/);
+        await expect(execute(installScript, [], { env })).rejects.toThrow(
+          /must not be group\/world readable/,
+        );
         expect(await readdir(releasesDir)).toEqual(secondRelease);
         const lockDir = path.join(path.dirname(releasesDir), ".install.lock");
         await mkdir(lockDir);
-        await expect(
-          execute(path.join(releaseRoot, "scripts", "install-launch-agent.sh"), [], {
-            env: installEnv,
-          }),
-        ).rejects.toThrow(/Another install is running/);
+        await expect(execute(installScript, [], { env })).rejects.toThrow(
+          /Another install is running/,
+        );
         expect(await readdir(releasesDir)).toEqual(secondRelease);
       }
     },
