@@ -34,4 +34,4 @@ jobs:
           version: 11.28.11
 
       - name: Scan the lockfile for vulnerabilities
-        run: pnpm audit --audit-level moderate
+        run: pnpm audit
