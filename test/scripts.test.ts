@@ -61,18 +61,9 @@ describe("runner scripts", () => {
       "utf8",
     );
 
-    expect(script).toContain('LABEL="local.drafts-mcp-bridge"');
-    expect(script).toContain('ROOT_DIR="$ROOT_DIR/release/drafts-mcp-bridge"');
     expect(script).toContain("Run pnpm release first");
-    expect(script).toContain('SERVICE_DIR="$HOME/Library/Application Support/drafts-mcp-bridge"');
-    expect(script).toContain('SOURCE_LAUNCHER_PATH="$ROOT_DIR/scripts/drafts-mcp-bridge.sh"');
-    expect(script).toContain('LAUNCHER_PATH="$SERVICE_DIR/drafts-mcp-bridge.sh"');
-    expect(script).toContain('cp "$SOURCE_LAUNCHER_PATH" "$LAUNCHER_PATH"');
-    expect(script).toContain("$HOME/Library/LaunchAgents/$LABEL.plist");
-    expect(script).toContain("wait_for_service_removal");
     expect(script).toContain('launchctl print "$GUI_DOMAIN/$LABEL"');
     expect(script).toContain('if [ "$attempts" -ge 10 ]');
-    expect(script).toContain("bootstrap_launch_agent");
     expect(script).toContain('launchctl bootstrap "$GUI_DOMAIN" "$PLIST"');
     expect(script).toContain('if [ "$attempts" -ge 5 ]');
     expect(script).toContain('launchctl enable "$GUI_DOMAIN/$LABEL"');

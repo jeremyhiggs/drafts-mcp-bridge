@@ -6,7 +6,7 @@ Run the [Drafts MCP server](https://github.com/agiletortoise/drafts-mcp-server) 
 
 ## First-time setup: background service
 
-You need macOS with Drafts installed and automation access allowed, Node.js 24+, and pnpm 11.28.7 to build. Tailscale is needed only if you enable Serve. Run these commands from this checkout:
+You need macOS with Drafts installed and automation access allowed, Node.js 24+, and the pnpm version pinned in `package.json` to build. Tailscale is needed only if you enable Serve. Run these commands from this checkout:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -134,6 +134,8 @@ pnpm launchd:install
 
 The agent runs from its Application Support copy, so rebuilding the checkout alone does not update it. The installer keeps the user config and token outside the release and removes the prior installed version only after the replacement starts.
 
+The installer stages the new release, then stops the previous LaunchAgent and waits for launchd to unload it before replacing the launcher and plist. If you install manually, follow the same order. macOS can ask you to approve Automation access to Drafts again when it detects a different executable. Run `pnpm bridge:test` after installing (`./scripts/check-bridge.sh` from an extracted release) to verify that the new agent can read Drafts. If macOS prompts, approve access and rerun the check. You can review access under **System Settings → Privacy & Security → Automation**. [Apple’s Automation settings guide](https://support.apple.com/en-au/guide/mac-help/mchl07817563/mac)
+
 ```sh
 pnpm launchd:logs
 launchctl print "gui/$(id -u)/local.drafts-mcp-bridge"
@@ -201,7 +203,7 @@ An extracted release includes the same commands without pnpm or `node_modules`:
 
 ## Development
 
-The project pins pnpm 11.28.7. CI checks formatting, lint, types, tests, builds, and runtime plus development dependency advisories on pull requests and pushes to `main`. The dependency audit also runs daily at 00:00 UTC and fails on moderate or higher severity advisories.
+CI checks formatting, lint, types, tests, builds, and runtime plus development dependency advisories on pull requests and pushes to `main`. The dependency audit also runs daily at 00:00 UTC. The workspace sets the audit threshold to moderate for both CI and local runs and requires dependency publish times to enforce the seven-day release-age policy.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -210,7 +212,7 @@ pnpm run lint
 pnpm run typecheck
 pnpm test
 pnpm run build
-pnpm audit --audit-level moderate
+pnpm audit
 ```
 
 Tests use a fake stdio MCP server and a standalone archive without `node_modules`. AppleScript, Tailscale, and launchctl commands are simulated; tests do not access your Drafts data.

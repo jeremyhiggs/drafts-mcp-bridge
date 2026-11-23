@@ -1,6 +1,9 @@
+audit:
+  level: moderate
 blockExoticSubdeps: true
 engineStrict: true
 minimumReleaseAge: 10080
+minimumReleaseAgeIgnoreMissingTime: false
 allowBuilds:
   "esbuild@0.28.2": true
 overrides:
